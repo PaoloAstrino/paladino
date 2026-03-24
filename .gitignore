@@ -78,3 +78,6 @@ Thumbs.db
 # Neo4j
 neo4j_data/
 neo4j_logs/
+
+# Brainstorming notes
+ideas/
