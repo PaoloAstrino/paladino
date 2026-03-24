@@ -28,7 +28,7 @@ def test_deduplicator_finds_duplicates_in_neo4j(mock_driver):
 def test_enricher_calculates_statistics(mock_driver):
     """Test that the enricher correctly calculates company risk scores."""
     # Fix: Pass the driver
-    enricher = CompanyEnricher(mock_driver)
+    CompanyEnricher(mock_driver)
 
     # Mock the return for the risk calculation query
     mock_session = mock_driver.session.return_value.__enter__.return_value

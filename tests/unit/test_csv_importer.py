@@ -326,7 +326,7 @@ class TestUniversalIngestorImportCsv:
             patch(
                 "paladino.etl.csv_importer.CustomCSVImporter.import_file",
                 return_value=ImportResult(rows_read=1, rows_merged=1),
-            ) as mock_import,
+            ),
         ):
             # Patch __init__ so no real Neo4j connection is made
             from paladino.etl import csv_importer as _mod

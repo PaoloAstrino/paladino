@@ -155,7 +155,7 @@ def test_graphrag_multi_hop_reasoning(clean_neo4j):
         """)
 
     # Execute multi-hop query
-    agent = GraphRAGAgent(clean_neo4j)
+    GraphRAGAgent(clean_neo4j)
 
     # Custom query: Companies with PNRR projects
     with clean_neo4j.session() as session:

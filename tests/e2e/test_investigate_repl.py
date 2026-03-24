@@ -315,7 +315,7 @@ class TestFullREPLWorkflow:
         mock_driver_func.return_value = mock_driver
 
         mock_console = Console(file=StringIO())
-        repl = InvestigativeREPL(console=mock_console)
+        InvestigativeREPL(console=mock_console)
 
         # Mock agent response
         repl.agent.natural_language_query = Mock(

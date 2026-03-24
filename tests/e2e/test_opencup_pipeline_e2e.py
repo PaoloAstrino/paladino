@@ -24,7 +24,7 @@ def test_opencup_pipeline_e2e(clean_neo4j, tmp_path):
     5. Verifies data integrity
     """
     # 1. Download (use sample data)
-    downloader = OpencupDownloader(cache_dir=tmp_path / "opencup")
+    OpencupDownloader(cache_dir=tmp_path / "opencup")
 
     # For E2E test, create sample data
     sample_data = pl.DataFrame(

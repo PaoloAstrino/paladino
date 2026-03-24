@@ -722,7 +722,7 @@ class TestCypherQueryValidation:
         """Test multi-line injection attempts."""
         validator = CypherValidator()
 
-        injection = """
+        query = """
         MATCH (c:Company {cf: $cf})
         RETURN c
         /*
@@ -1056,7 +1056,6 @@ class TestIntegration:
         """Test authenticated request with rate limiting."""
         # Setup
         api_key = "sk_test_abc123"
-        ip = "192.168.1.100"
         limit = 100  # Authenticated limit
 
         # Make authenticated requests

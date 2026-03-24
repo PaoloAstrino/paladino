@@ -55,8 +55,6 @@ class TestCreateFraudPatternNode:
             evidence={"a": 1},
             affected_entity_ids=["id1", "id2"],
         )
-        _, kwargs = conn.run_query.call_args
-        params = kwargs if kwargs else conn.run_query.call_args[0][1]
         # Accept both positional and keyword call styles
         all_calls = conn.run_query.call_args_list
         call_params = all_calls[0][0][1]  # second positional arg = params dict

@@ -84,7 +84,7 @@ def test_download_with_retry(tmp_path):
             Mock(status_code=200, json=lambda: {"test": "data"}),
         ]
 
-        result = downloader.fetch_release(2024, 1)
+        downloader.fetch_release(2024, 1)
 
         # Current implementation doesn't have internal loop retry in fetch_release,
         # but we check it tried once.
