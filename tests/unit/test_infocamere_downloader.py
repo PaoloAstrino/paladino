@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -17,13 +17,12 @@ from paladino.etl.corporate.infocamere_downloader import (
     DownloadResult,
     FetchSummary,
     RegistroImpreseFetcher,
-    _http_get,
 )
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixtures
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def data_dir(tmp_path: Path) -> Path:
@@ -46,6 +45,7 @@ def dry_run_fetcher(data_dir: Path) -> RegistroImpreseFetcher:
 # DownloadResult / FetchSummary unit tests
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestDownloadResult:
     def test_defaults(self):
         r = DownloadResult(source="test", success=True)
@@ -67,19 +67,22 @@ class TestFetchSummary:
         assert s.failed == []
 
     def test_counts(self):
-        s = FetchSummary(downloads=[
-            DownloadResult(source="A", success=True, rows_written=100),
-            DownloadResult(source="B", success=False, error="err"),
-            DownloadResult(source="C", success=False, skipped=True, skip_reason="no key"),
-        ])
+        s = FetchSummary(
+            downloads=[
+                DownloadResult(source="A", success=True, rows_written=100),
+                DownloadResult(source="B", success=False, error="err"),
+                DownloadResult(source="C", success=False, skipped=True, skip_reason="no key"),
+            ]
+        )
         assert len(s.successful) == 1
-        assert len(s.failed) == 1      # only non-skipped failures
+        assert len(s.failed) == 1  # only non-skipped failures
         assert s.total_rows == 100
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # RegistroImpreseFetcher — ATOKA / OpenCorporates skipped without keys
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestFetcherApiKeyGating:
     def test_atoka_skipped_without_key(self, fetcher, monkeypatch):
@@ -98,20 +101,19 @@ class TestFetcherApiKeyGating:
 # ANAC catalogue fetch (mocked)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestAnacFetch:
     def _make_catalogue_response(self, ids: list[str]) -> bytes:
         return json.dumps({"result": ids}).encode()
 
     def _make_package_response(self, dataset_id: str, csv_url: str) -> bytes:
-        return json.dumps({
-            "result": {
-                "resources": [{"format": "CSV", "url": csv_url}]
-            }
-        }).encode()
+        return json.dumps({"result": {"resources": [{"format": "CSV", "url": csv_url}]}}).encode()
 
     def test_anac_returns_skipped_when_no_matching_datasets(self, fetcher):
         catalogue = json.dumps({"result": ["irrelevant_dataset_1"]}).encode()
-        with patch("paladino.etl.corporate.infocamere_downloader._http_get", return_value=catalogue):
+        with patch(
+            "paladino.etl.corporate.infocamere_downloader._http_get", return_value=catalogue
+        ):
             results = fetcher._fetch_anac_subjects()
         assert all(r.skipped for r in results)
 
@@ -141,7 +143,7 @@ class TestAnacFetch:
         """dry_run=True must not write any files."""
         csv_url = "https://example.com/soggetti.csv"
         meta_bytes = self._make_package_response("soggetti_2024", csv_url)
-        csv_bytes  = b"cf,nome\n12345678901,SRL TEST\n"
+        csv_bytes = b"cf,nome\n12345678901,SRL TEST\n"
 
         call_count = [0]
 
@@ -164,11 +166,16 @@ class TestAnacFetch:
 # fetch_all integration test (fully mocked)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestFetchAll:
     def test_fetch_all_returns_summary(self, fetcher):
-        with patch.object(fetcher, "_fetch_anac_subjects", return_value=[
-            DownloadResult(source="ANAC/soggetti_2024", success=True, rows_written=250)
-        ]):
+        with patch.object(
+            fetcher,
+            "_fetch_anac_subjects",
+            return_value=[
+                DownloadResult(source="ANAC/soggetti_2024", success=True, rows_written=250)
+            ],
+        ):
             summary = fetcher.fetch_all()
 
         assert summary.total_rows == 250
@@ -176,9 +183,13 @@ class TestFetchAll:
         assert summary.elapsed_seconds >= 0
 
     def test_print_summary_executes_without_error(self, fetcher):
-        summary = FetchSummary(downloads=[
-            DownloadResult(source="ANAC", success=True, rows_written=50, file_path=Path("test.csv")),
-            DownloadResult(source="ATOKA", success=False, skipped=True, skip_reason="No key"),
-        ])
+        summary = FetchSummary(
+            downloads=[
+                DownloadResult(
+                    source="ANAC", success=True, rows_written=50, file_path=Path("test.csv")
+                ),
+                DownloadResult(source="ATOKA", success=False, skipped=True, skip_reason="No key"),
+            ]
+        )
         # Should not raise
         fetcher.print_summary(summary)

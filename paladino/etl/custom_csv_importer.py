@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any
 
 from neo4j import Driver
-from loguru import logger
 
 
 class CustomCSVImporter:
@@ -31,9 +30,19 @@ class CustomCSVImporter:
 
     # SECURITY FIX (SEC-009): Allowlist of valid key properties to prevent Cypher injection
     _ALLOWED_KEY_PROPERTIES = {
-        "cf", "piva", "cig", "cup", "id", "nome_normalizzato",
-        "codice_fiscale", "partita_iva", "ragione_sociale",
-        "titolo", "oggetto", "importo", "data",
+        "cf",
+        "piva",
+        "cig",
+        "cup",
+        "id",
+        "nome_normalizzato",
+        "codice_fiscale",
+        "partita_iva",
+        "ragione_sociale",
+        "titolo",
+        "oggetto",
+        "importo",
+        "data",
     }
 
     def __init__(self, driver: Driver):
@@ -116,7 +125,9 @@ class CustomCSVImporter:
         rows = list(reader)
         if max_rows is not None:
             rows = rows[:max_rows]
-        headers = [header.strip() for header in (reader.fieldnames or []) if header and header.strip()]
+        headers = [
+            header.strip() for header in (reader.fieldnames or []) if header and header.strip()
+        ]
         return rows, headers, effective_delimiter
 
     @staticmethod
@@ -144,7 +155,7 @@ class CustomCSVImporter:
         if key_property:
             if key_property not in mapping:
                 raise ValueError(f"key_property '{key_property}' must be present in mapping")
-            
+
             # SECURITY FIX (SEC-009): Validate key_property against allowlist
             if key_property not in self._ALLOWED_KEY_PROPERTIES:
                 raise ValueError(

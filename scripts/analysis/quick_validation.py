@@ -8,11 +8,12 @@ Usage:
 """
 
 import sys
-from pathlib import Path
+
 
 def check_neo4j():
     """Verify Neo4j connection."""
     from paladino.db import get_driver
+
     try:
         driver = get_driver()
         with driver.session() as session:
@@ -25,16 +26,18 @@ def check_neo4j():
         print("   💡 Solution: Run 'docker-compose up -d' to start Neo4j")
         return False
 
+
 def check_data_loaded():
     """Verify data is loaded."""
     from paladino.db import get_driver
+
     driver = get_driver()
     with driver.session() as session:
         result = session.run("MATCH (n) RETURN count(n) as count").single()
         count = result["count"]
         if count > 0:
             print(f"   ✅ Data loaded: {count} nodes in graph")
-            
+
             # Show breakdown by label
             result = session.run("""
                 MATCH (n) 
@@ -51,25 +54,31 @@ def check_data_loaded():
             print("   💡 Solution: Run 'python scripts/run_anac_etl.py'")
             return False
 
+
 def check_schema():
     """Verify schema is initialized."""
     from paladino.db import get_driver
+
     driver = get_driver()
     with driver.session() as session:
         constraints = session.run("SHOW CONSTRAINTS").list()
         indexes = session.run("SHOW INDEXES").list()
-        
+
         if len(constraints) > 0 and len(indexes) > 0:
-            print(f"   ✅ Schema initialized: {len(constraints)} constraints, {len(indexes)} indexes")
+            print(
+                f"   ✅ Schema initialized: {len(constraints)} constraints, {len(indexes)} indexes"
+            )
             return True
         else:
             print("   ❌ Schema not initialized")
             print("   💡 Solution: Run 'python scripts/init_schema.py'")
             return False
 
+
 def check_api():
     """Verify API starts."""
     import requests
+
     try:
         response = requests.get("http://localhost:8000/health", timeout=5)
         if response.status_code == 200:
@@ -86,9 +95,11 @@ def check_api():
         print(f"   ❌ API check failed: {e}")
         return False
 
+
 def check_templates():
     """Verify query templates work."""
     from paladino.app.graphrag_agent import CypherQueryTemplates
+
     try:
         templates = CypherQueryTemplates()
         template_list = templates.list_templates()
@@ -102,15 +113,17 @@ def check_templates():
         print(f"   ❌ Template check failed: {e}")
         return False
 
+
 def check_cli():
     """Verify CLI is installed."""
     import subprocess
+
     try:
         result = subprocess.run(
             [sys.executable, "-m", "paladino.cli", "--help"],
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=5,
         )
         if result.returncode == 0 and "Paladino" in result.stdout:
             print("   ✅ CLI installed and working")
@@ -122,11 +135,12 @@ def check_cli():
         print(f"   ❌ CLI check failed: {e}")
         return False
 
+
 def main():
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("🔍 PALADINO QUICK VALIDATION")
-    print("="*60 + "\n")
-    
+    print("=" * 60 + "\n")
+
     checks = [
         ("Neo4j Connection", check_neo4j),
         ("Schema Initialized", check_schema),
@@ -135,7 +149,7 @@ def main():
         ("Query Templates", check_templates),
         ("CLI Installed", check_cli),
     ]
-    
+
     results = []
     for name, check_func in checks:
         print(f"\nChecking: {name}...")
@@ -146,20 +160,22 @@ def main():
             results.append(("✅", name, "PASS"))
         else:
             results.append(("❌", name, "FAIL"))
-    
-    print("\n\n" + "="*60)
+
+    print("\n\n" + "=" * 60)
     print("VALIDATION SUMMARY")
-    print("="*60)
-    
+    print("=" * 60)
+
     for status, name, result in results:
         print(f"{status} {name}: {result}")
-    
+
     passed = sum(1 for _, _, r in results if r == "PASS")
     skipped = sum(1 for _, _, r in results if r == "SKIPPED")
     total = len([r for r in results if r[2] != "SKIPPED"])
-    
-    print(f"\nResult: {passed}/{total} checks passed" + (f" ({skipped} skipped)" if skipped else ""))
-    
+
+    print(
+        f"\nResult: {passed}/{total} checks passed" + (f" ({skipped} skipped)" if skipped else "")
+    )
+
     if passed == total:
         print("\n🎉 SUCCESS! Paladino is working correctly!")
         print("\n📝 Next steps:")
@@ -176,6 +192,7 @@ def main():
         print("   3. Load sample data: python scripts/run_anac_etl.py --sample")
         print("   4. Check .env configuration")
         return 1
+
 
 if __name__ == "__main__":
     sys.exit(main())

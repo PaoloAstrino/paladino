@@ -29,16 +29,14 @@ Usage
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from loguru import logger
 
 from paladino.db import Neo4jConnection
 
-
 _CHECKPOINT_LABEL = "SyncCheckpoint"
-_CORPORATE_KEY    = "corporate_etl"
+_CORPORATE_KEY = "corporate_etl"
 
 
 class CorporateSyncTracker:
@@ -56,7 +54,7 @@ class CorporateSyncTracker:
 
     # ── public API ───────────────────────────────────────────────────────────
 
-    def get_last_sync(self) -> Optional[datetime]:
+    def get_last_sync(self) -> datetime | None:
         """
         Return the timestamp of the most recent successful corporate ETL run,
         or ``None`` if this is the first run.
@@ -83,15 +81,15 @@ class CorporateSyncTracker:
                 return None
         if isinstance(ts_raw, datetime):
             if ts_raw.tzinfo is None:
-                return ts_raw.replace(tzinfo=timezone.utc)
+                return ts_raw.replace(tzinfo=UTC)
             return ts_raw
         return None
 
     def record_sync(
         self,
-        rows_written:  int = 0,
-        persons:       int = 0,
-        represents:    int = 0,
+        rows_written: int = 0,
+        persons: int = 0,
+        represents: int = 0,
         shareholdings: int = 0,
     ) -> None:
         """
@@ -100,7 +98,7 @@ class CorporateSyncTracker:
 
         This is idempotent — safe to call after a partial run.
         """
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         self.conn.run_query(
             f"""
             MERGE (c:{_CHECKPOINT_LABEL} {{key: $key}})
@@ -112,11 +110,11 @@ class CorporateSyncTracker:
                 c.updated_at      = $now
             """,
             {
-                "key":          _CORPORATE_KEY,
-                "now":          now,
+                "key": _CORPORATE_KEY,
+                "now": now,
                 "rows_written": rows_written,
-                "persons":      persons,
-                "represents":   represents,
+                "persons": persons,
+                "represents": represents,
                 "shareholdings": shareholdings,
             },
         )
@@ -157,7 +155,7 @@ class CorporateSyncTracker:
         last = self.get_last_sync()
         if last is None:
             return False
-        age = (datetime.now(timezone.utc) - last).total_seconds() / 3600
+        age = (datetime.now(UTC) - last).total_seconds() / 3600
         if age < max_age_hours:
             logger.info(
                 f"[sync] Skipping corporate ETL — last run {age:.1f}h ago "

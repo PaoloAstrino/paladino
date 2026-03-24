@@ -3,17 +3,17 @@ Risk Scoring Engine - Automated anomaly detection using Graph analytics.
 Calculates a risk_score (0.0 to 1.0) for every Company in the graph.
 """
 
-from loguru import logger
-from typing import Dict, List
 import uuid
-from paladino.db import Neo4jConnection
 
-from paladino.analytics.gds_manager import GDSManager
+from loguru import logger
+
 from paladino.analytics.fraud_patterns import FraudPatternLibrary
+from paladino.analytics.gds_manager import GDSManager
+from paladino.db import Neo4jConnection
 
 # Risk scoring weights (sum to 1.0 for normalized scoring)
 SINGLE_BIDDER_WEIGHT = 0.4  # High weight: lack of competition is strong risk indicator
-CENTRALITY_WEIGHT = 0.3     # Medium weight: market dominance may indicate hub behavior
+CENTRALITY_WEIGHT = 0.3  # Medium weight: market dominance may indicate hub behavior
 BUYER_CONCENTRATION_WEIGHT = 0.3  # Medium weight: could indicate favoritism/collusion
 
 # Risk thresholds
@@ -26,7 +26,7 @@ BUYER_CONCENTRATION_RATIO = 0.8  # Threshold for flagging buyer concentration
 class RiskEngine:
     """
     Analyzes graph patterns to identify suspicious procurement activity.
-    
+
     Risk scoring methodology:
     - Single-bidder ratio: Companies with high % of single-bidder wins (weight: 0.4)
     - Market dominance: High PageRank centrality (weight: 0.3)
@@ -57,7 +57,8 @@ class RiskEngine:
 
         # 3. Flag Single-Bidder wins (Weight: SINGLE_BIDDER_WEIGHT)
         logger.info("Analyzing competition levels...")
-        self.conn.run_query("""
+        self.conn.run_query(
+            """
             MATCH (c:Company)-[:WINS]->(t:Tender)
             WITH c, count(t) as total_wins,
                  sum(case when t.single_bidder = true then 1 else 0 end) as single_bidder_wins
@@ -65,27 +66,27 @@ class RiskEngine:
             WITH c, (toFloat(single_bidder_wins) / total_wins) as ratio
             SET c.risk_score = c.risk_score + (ratio * $weight),
                 c.anomaly_flags = coalesce(c.anomaly_flags, []) + ["high_single_bidder_ratio"]
-        """, {
-            "min_wins": MIN_WINS_FOR_ANALYSIS,
-            "weight": SINGLE_BIDDER_WEIGHT
-        })
+        """,
+            {"min_wins": MIN_WINS_FOR_ANALYSIS, "weight": SINGLE_BIDDER_WEIGHT},
+        )
 
         # 4. Flag Centrality / Market Dominance (Weight: CENTRALITY_WEIGHT)
         # High PageRank + low diversity of buyers = suspicious hub
         logger.info("Analyzing market dominance via PageRank...")
-        self.conn.run_query("""
+        self.conn.run_query(
+            """
             MATCH (c:Company)
             WHERE c.centrality_score > $threshold
             SET c.risk_score = c.risk_score + $weight,
                 c.anomaly_flags = coalesce(c.anomaly_flags, []) + ["market_dominance_high"]
-        """, {
-            "threshold": HIGH_CENTRALITY_THRESHOLD,
-            "weight": CENTRALITY_WEIGHT
-        })
+        """,
+            {"threshold": HIGH_CENTRALITY_THRESHOLD, "weight": CENTRALITY_WEIGHT},
+        )
 
         # 5. Flag Buyer Concentration (Weight: BUYER_CONCENTRATION_WEIGHT)
         logger.info("Analyzing buyer concentration...")
-        self.conn.run_query("""
+        self.conn.run_query(
+            """
             MATCH (c:Company)-[:WINS]->(t:Tender)<-[:ISSUES]-(b:Buyer)
             WITH c, b, count(t) as wins_with_buyer
             MATCH (c)-[:WINS]->(total_t:Tender)
@@ -94,11 +95,13 @@ class RiskEngine:
               AND (toFloat(wins_with_buyer) / total_wins) > $ratio_threshold
             SET c.risk_score = c.risk_score + $weight,
                 c.anomaly_flags = coalesce(c.anomaly_flags, []) + ["high_buyer_concentration"]
-        """, {
-            "min_wins": MIN_WINS_FOR_BUYER_ANALYSIS,
-            "ratio_threshold": BUYER_CONCENTRATION_RATIO,
-            "weight": BUYER_CONCENTRATION_WEIGHT
-        })
+        """,
+            {
+                "min_wins": MIN_WINS_FOR_BUYER_ANALYSIS,
+                "ratio_threshold": BUYER_CONCENTRATION_RATIO,
+                "weight": BUYER_CONCENTRATION_WEIGHT,
+            },
+        )
 
         # 6. Normalize Scores (ensure max is 1.0)
         self.conn.run_query("""
@@ -115,8 +118,10 @@ class RiskEngine:
 
         # Log summary
         total_findings = sum(len(v) for v in fraud_results.values())
-        logger.success(f"Fraud Pattern Library: {total_findings} finding(s) across "
-                       f"{len(fraud_results)} detector(s).")
+        logger.success(
+            f"Fraud Pattern Library: {total_findings} finding(s) across "
+            f"{len(fraud_results)} detector(s)."
+        )
 
         # Final normalisation after fraud deltas
         self.conn.run_query("""
@@ -131,7 +136,7 @@ class RiskEngine:
 
         logger.success("Global risk analysis complete (heuristics + fraud patterns).")
 
-    def get_high_risk_entities(self, limit: int = 10) -> List[Dict]:
+    def get_high_risk_entities(self, limit: int = 10) -> list[dict]:
         """Retrieve companies with the highest risk scores."""
         query = """
             MATCH (c:Company)

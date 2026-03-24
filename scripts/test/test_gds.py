@@ -1,12 +1,13 @@
-
 import sys
 from pathlib import Path
+
 from loguru import logger
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from paladino.db import get_driver
+
 
 def test():
     driver = get_driver()
@@ -19,6 +20,7 @@ def test():
         except Exception as e:
             logger.error(f"GDS Error: {e}")
     driver.close()
+
 
 if __name__ == "__main__":
     test()

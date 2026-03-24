@@ -1,5 +1,5 @@
-from dataclasses import dataclass
 import csv
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -151,9 +151,7 @@ class UniversalIngestor:
                 f"Suggested command: {decision.next_command or 'n/a'}"
             )
         if decision.handler == "custom_csv_import":
-            raise ValueError(
-                "This source is an unknown CSV. Use import_csv() instead of ingest()."
-            )
+            raise ValueError("This source is an unknown CSV. Use import_csv() instead of ingest().")
 
         if decision.handler == "web_extractor":
             return self._web_extractor.extract(source)

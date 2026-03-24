@@ -7,15 +7,14 @@ Each public method is tested with:
   2. An empty-result scenario that should return [] (and *not* raise).
 """
 
-from unittest.mock import MagicMock, patch
-import pytest
+from unittest.mock import MagicMock
 
 from paladino.analytics.ownership_graph import OwnershipGraphAnalyzer
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _make_analyzer(return_value=None, side_effect=None):
     conn = MagicMock()
@@ -30,8 +29,8 @@ def _make_analyzer(return_value=None, side_effect=None):
 # get_ownership_chain
 # ──────────────────────────────────────────────────────────────────────────────
 
-class TestGetOwnershipChain:
 
+class TestGetOwnershipChain:
     def test_returns_rows_from_query(self):
         row = {
             "owner_type": "Company",
@@ -64,15 +63,15 @@ class TestGetOwnershipChain:
 # get_supply_chain
 # ──────────────────────────────────────────────────────────────────────────────
 
-class TestGetSupplyChain:
 
+class TestGetSupplyChain:
     def test_downstream_returns_rows(self):
         row = {
             "entity_type": "Company",
             "entity_name": "Sub-Appaltatore Beta Srl",
-            "entity_id":   "sub-1",
-            "hops":        1,
-            "cig":         "CIG-ABC",
+            "entity_id": "sub-1",
+            "hops": 1,
+            "cig": "CIG-ABC",
         }
         analyzer, conn = _make_analyzer(return_value=[row])
         result = analyzer.get_supply_chain("prime-cf", direction="downstream")
@@ -99,13 +98,13 @@ class TestGetSupplyChain:
 # find_board_overlaps
 # ──────────────────────────────────────────────────────────────────────────────
 
-class TestFindBoardOverlaps:
 
+class TestFindBoardOverlaps:
     def test_returns_overlap_rows(self):
         row = {
-            "company1":      "Rossi SpA",
-            "company2":      "Verdi Srl",
-            "shared_count":  3,
+            "company1": "Rossi SpA",
+            "company2": "Verdi Srl",
+            "shared_count": 3,
             "shared_persons": ["Mario Rossi"],
         }
         analyzer, conn = _make_analyzer(return_value=[row])
@@ -129,13 +128,13 @@ class TestFindBoardOverlaps:
 # detect_carousel_paths
 # ──────────────────────────────────────────────────────────────────────────────
 
-class TestDetectCarouselPaths:
 
+class TestDetectCarouselPaths:
     def test_returns_scc_based_results(self):
         row = {
-            "scc_id":       7,
-            "cycle_ids":    ["A", "B", "C"],
-            "cycle_names":  ["A Srl", "B Srl", "C Srl"],
+            "scc_id": 7,
+            "cycle_ids": ["A", "B", "C"],
+            "cycle_names": ["A Srl", "B Srl", "C Srl"],
             "cycle_length": 3,
         }
         analyzer, conn = _make_analyzer(return_value=[row])
@@ -164,15 +163,15 @@ class TestDetectCarouselPaths:
 # score_shell_companies
 # ──────────────────────────────────────────────────────────────────────────────
 
-class TestScoreShellCompanies:
 
+class TestScoreShellCompanies:
     def test_returns_scored_rows(self):
         row = {
-            "company_id":    "cf-shell",
-            "company_name":  "Ghost Lavori Srl",
-            "tender_wins":   5,
-            "employees":     1,
-            "shell_score":   0.92,
+            "company_id": "cf-shell",
+            "company_name": "Ghost Lavori Srl",
+            "tender_wins": 5,
+            "employees": 1,
+            "shell_score": 0.92,
         }
         analyzer, conn = _make_analyzer(return_value=[row])
         result = analyzer.score_shell_companies()
@@ -189,17 +188,17 @@ class TestScoreShellCompanies:
 # get_corporate_family
 # ──────────────────────────────────────────────────────────────────────────────
 
-class TestGetCorporateFamily:
 
+class TestGetCorporateFamily:
     def test_returns_structured_family(self):
         """When siblings are found the method returns a nested dict, not a list."""
         row = {
-            "ubo_id":      "ubo-1",
-            "ubo_name":    "Mario Rossi",
-            "ubo_type":    "Person",
-            "sibling_id":  "cf-sibling",
+            "ubo_id": "ubo-1",
+            "ubo_name": "Mario Rossi",
+            "ubo_type": "Person",
+            "sibling_id": "cf-sibling",
             "sibling_name": "Sibling SpA",
-            "risk_score":  0.4,
+            "risk_score": 0.4,
         }
         analyzer, conn = _make_analyzer(return_value=[row])
         result = analyzer.get_corporate_family("root-id")
@@ -228,16 +227,18 @@ class TestGetCorporateFamily:
 # _warn_empty  (module-level function)
 # ──────────────────────────────────────────────────────────────────────────────
 
-class TestWarnEmpty:
 
+class TestWarnEmpty:
     def test_does_not_raise(self):
         """_warn_empty must never raise regardless of inputs."""
         from paladino.analytics.ownership_graph import _warn_empty
+
         _warn_empty("test_query")
         _warn_empty("test_query", reason="No REPRESENTS edges")
         _warn_empty("test_query", reason=None)
 
     def test_accepts_arbitrary_reason_string(self):
         from paladino.analytics.ownership_graph import _warn_empty
+
         # should print a panel but not raise
         _warn_empty("my_detector", reason="x" * 500)

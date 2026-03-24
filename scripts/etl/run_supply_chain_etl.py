@@ -48,17 +48,18 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from loguru import logger
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich import box
-from loguru import logger
 
 console = Console()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _print_header(title: str) -> None:
     console.print()
@@ -71,6 +72,7 @@ def _check_neo4j(settings) -> bool:
     """Return True if Neo4j is reachable, else print a guidance panel."""
     try:
         from neo4j import GraphDatabase
+
         driver = GraphDatabase.driver(
             settings.neo4j_uri,
             auth=(settings.neo4j_user, settings.neo4j_password),
@@ -99,6 +101,7 @@ def _check_neo4j(settings) -> bool:
 # Step 0 — Fetch corporate data
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def run_fetch_corporate(settings, dry_run: bool = False) -> None:
     """
     Download fresh corporate CSV files from configured remote sources.
@@ -125,7 +128,7 @@ def run_fetch_corporate(settings, dry_run: bool = False) -> None:
             from paladino.db import Neo4jConnection
             from paladino.etl.corporate.incremental_sync import CorporateSyncTracker
 
-            conn    = Neo4jConnection(settings.neo4j_uri, settings.neo4j_user, settings.neo4j_password)
+            conn = Neo4jConnection(settings.neo4j_uri, settings.neo4j_user, settings.neo4j_password)
             tracker = CorporateSyncTracker(conn)
             tracker.record_sync(rows_written=summary.total_rows)
             conn.close()
@@ -137,6 +140,7 @@ def run_fetch_corporate(settings, dry_run: bool = False) -> None:
 # Step 1 — Subcontractors
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def run_subcontractors(settings, dry_run: bool = False) -> int:
     """
     Load PNRR subcontractor data and create SUBCONTRACTS_TO edges.
@@ -145,10 +149,11 @@ def run_subcontractors(settings, dry_run: bool = False) -> int:
     """
     _print_header("Step 1 / 3 — Subcontractor ETL  (SUBCONTRACTS_TO edges)")
 
-    from paladino.etl.pnnr_transform import PnnrTransformer
-    from paladino.etl.pnnr_loader import PnnrNeo4jLoader
-    from neo4j import GraphDatabase
     import polars as pl
+    from neo4j import GraphDatabase
+
+    from paladino.etl.pnnr_loader import PnnrNeo4jLoader
+    from paladino.etl.pnnr_transform import PnnrTransformer
 
     sub_path = settings.data_dir / "pnnr" / "PNRR_Subappaltatori_Gare.csv"
 
@@ -195,17 +200,17 @@ def run_subcontractors(settings, dry_run: bool = False) -> int:
     loader = PnnrNeo4jLoader(driver)
 
     n_companies = loader.load_companies(companies_df)
-    n_sub       = loader.load_sub_contracts(sub_df)
-    n_edges     = loader.load_subcontracts_to(sub_df)
+    n_sub = loader.load_sub_contracts(sub_df)
+    n_edges = loader.load_subcontracts_to(sub_df)
 
     driver.close()
 
     table = Table(title="Subcontractor ETL Results", box=box.SIMPLE)
-    table.add_column("Operation",   style="cyan")
-    table.add_column("Records",     justify="right", style="bold green")
-    table.add_row("Companies merged",              str(n_companies))
-    table.add_row("SUB_CONTRACTOR_ON edges",       str(n_sub))
-    table.add_row("SUBCONTRACTS_TO edges (new)",   str(n_edges))
+    table.add_column("Operation", style="cyan")
+    table.add_column("Records", justify="right", style="bold green")
+    table.add_row("Companies merged", str(n_companies))
+    table.add_row("SUB_CONTRACTOR_ON edges", str(n_sub))
+    table.add_row("SUBCONTRACTS_TO edges (new)", str(n_edges))
     console.print(table)
 
     return n_edges
@@ -215,6 +220,7 @@ def run_subcontractors(settings, dry_run: bool = False) -> int:
 # Step 2 — Corporate ETL
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def run_corporate(settings, dry_run: bool = False) -> dict:
     """
     Discover and load corporate CSV files (directors, shareholders).
@@ -223,22 +229,22 @@ def run_corporate(settings, dry_run: bool = False) -> dict:
     """
     _print_header("Step 2 / 3 — Corporate ETL  (Persons, REPRESENTS, SHAREHOLDER_OF)")
 
+    from paladino.db import Neo4jConnection
     from paladino.etl.corporate import (
+        CorporateLoader,
         CorporateSourceDiscovery,
         CorporateTransformer,
-        CorporateLoader,
     )
-    from paladino.db import Neo4jConnection
 
     discovery = CorporateSourceDiscovery(settings.data_dir)
-    result    = discovery.discover()
-    discovery.print_summary(result)   # rich panel with guidance if nothing found
+    result = discovery.discover()
+    discovery.print_summary(result)  # rich panel with guidance if nothing found
 
     if not result.source_files:
         return {"persons": 0, "represents": 0, "shareholdings": 0}
 
     transformer = CorporateTransformer()
-    frames      = transformer.transform_all(result.source_files)
+    frames = transformer.transform_all(result.source_files)
 
     console.print(
         f"[green]✓[/green] Transformed: "
@@ -251,7 +257,7 @@ def run_corporate(settings, dry_run: bool = False) -> dict:
         console.print("[dim]--dry-run: skipping Neo4j writes[/dim]")
         return {"persons": 0, "represents": 0, "shareholdings": 0}
 
-    conn   = Neo4jConnection()
+    conn = Neo4jConnection()
     loader = CorporateLoader(conn)
     counts = loader.load_all(
         frames["persons_df"],
@@ -266,6 +272,7 @@ def run_corporate(settings, dry_run: bool = False) -> dict:
 # Step 3 — Analytics
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def run_analytics(dry_run: bool = False) -> None:
     """
     Run GDS projections (supply-chain SCC, ownership PageRank) and the three
@@ -273,9 +280,9 @@ def run_analytics(dry_run: bool = False) -> None:
     """
     _print_header("Step 3 / 3 — Supply-Chain & Ownership Analytics")
 
-    from paladino.db import Neo4jConnection
-    from paladino.analytics.gds_manager import GDSManager
     from paladino.analytics.fraud_patterns import FraudPatternLibrary
+    from paladino.analytics.gds_manager import GDSManager
+    from paladino.db import Neo4jConnection
 
     if dry_run:
         console.print("[dim]--dry-run: skipping analytics[/dim]")
@@ -302,21 +309,27 @@ def run_analytics(dry_run: bool = False) -> None:
 
     console.print("[cyan]→[/cyan] Running carousel_fraud detector…")
     carousels = lib.detect_carousel_fraud()
-    console.print(f"  [{'red' if carousels else 'green'}]"
-                  f"{'⚠' if carousels else '✓'}[/] "
-                  f"{len(carousels)} finding(s)")
+    console.print(
+        f"  [{'red' if carousels else 'green'}]"
+        f"{'⚠' if carousels else '✓'}[/] "
+        f"{len(carousels)} finding(s)"
+    )
 
     console.print("[cyan]→[/cyan] Running board_overlap_collusion detector…")
     overlaps = lib.detect_board_overlap_collusion()
-    console.print(f"  [{'red' if overlaps else 'green'}]"
-                  f"{'⚠' if overlaps else '✓'}[/] "
-                  f"{len(overlaps)} finding(s)")
+    console.print(
+        f"  [{'red' if overlaps else 'green'}]"
+        f"{'⚠' if overlaps else '✓'}[/] "
+        f"{len(overlaps)} finding(s)"
+    )
 
     console.print("[cyan]→[/cyan] Running subcontractor_concentration detector…")
     concentrations = lib.detect_subcontractor_concentration()
-    console.print(f"  [{'red' if concentrations else 'green'}]"
-                  f"{'⚠' if concentrations else '✓'}[/] "
-                  f"{len(concentrations)} finding(s)")
+    console.print(
+        f"  [{'red' if concentrations else 'green'}]"
+        f"{'⚠' if concentrations else '✓'}[/] "
+        f"{len(concentrations)} finding(s)"
+    )
 
     conn.close()
 
@@ -346,6 +359,7 @@ def run_analytics(dry_run: bool = False) -> None:
 # ──────────────────────────────────────────────────────────────────────────────
 # Main
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -390,9 +404,9 @@ def main() -> None:
             sys.exit(1)
 
     run_fetch = args.step in ("all", "fetch-corporate-data")
-    run_sub   = args.step in ("all", "subcontractors")
-    run_corp  = args.step in ("all", "corporate")
-    run_an    = args.step in ("all", "analytics")
+    run_sub = args.step in ("all", "subcontractors")
+    run_corp = args.step in ("all", "corporate")
+    run_an = args.step in ("all", "analytics")
 
     if run_fetch:
         run_fetch_corporate(settings, dry_run=args.dry_run)

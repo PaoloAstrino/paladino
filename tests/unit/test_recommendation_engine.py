@@ -9,14 +9,12 @@ production code must contain in the query string it sends to run_query().
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from paladino.analytics.recommendation_engine import (
     COMMUNITY_DEFAULT_SCORE,
-    RISK_DELTA_THRESHOLD,
     Recommendation,
     RecommendationEngine,
     RecommendationResult,
@@ -26,63 +24,62 @@ from paladino.analytics.recommendation_engine import (
     _risk_tier,
 )
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Canned graph data
 # ─────────────────────────────────────────────────────────────────────────────
 
 _SOURCE = {
-    "company_id":   "src-001",
-    "cf":           "12345678901",
+    "company_id": "src-001",
+    "cf": "12345678901",
     "company_name": "COSTRUZIONI ROSSI SRL",
-    "risk_score":   0.72,
+    "risk_score": 0.72,
     "anomaly_flags": ["high_single_bidder_ratio", "market_dominance_high"],
     "community_id": 5,
-    "ateco":        "41.20",
-    "regione":      "Lombardia",
+    "ateco": "41.20",
+    "regione": "Lombardia",
 }
 
 # Candidate company rows returned by content-based / community / anomaly queries
 _CAND_SAME_SECTOR_REGION = {
-    "company_id":    "cand-001",
-    "company_name":  "EDIL BIANCHI SPA",
-    "cf":            "98765432109",
-    "risk_score":    0.65,
-    "ateco":         "41.10",    # same 2-digit sector (41)
-    "regione":       "Lombardia",
+    "company_id": "cand-001",
+    "company_name": "EDIL BIANCHI SPA",
+    "cf": "98765432109",
+    "risk_score": 0.65,
+    "ateco": "41.10",  # same 2-digit sector (41)
+    "regione": "Lombardia",
     "anomaly_flags": ["high_single_bidder_ratio"],
 }
 
 _CAND_DIFFERENT_SECTOR = {
-    "company_id":    "cand-002",
-    "company_name":  "TECH VERDI SRL",
-    "cf":            "11223344556",
-    "risk_score":    0.30,
-    "ateco":         "62.01",    # different sector
-    "regione":       "Toscana",
+    "company_id": "cand-002",
+    "company_name": "TECH VERDI SRL",
+    "cf": "11223344556",
+    "risk_score": 0.30,
+    "ateco": "62.01",  # different sector
+    "regione": "Toscana",
     "anomaly_flags": [],
 }
 
 _CAND_COMMUNITY_MEMBER = {
     "company_id": "cand-003",
     "company_name": "APPALTI NERI SRL",
-    "cf":           "55667788990",
-    "risk_score":   0.60,
+    "cf": "55667788990",
+    "risk_score": 0.60,
 }
 
 _CAND_SECTOR_TRENDING = {
-    "company_id":  "cand-004",
+    "company_id": "cand-004",
     "company_name": "COSTRUZIONI GRIGI SPA",
-    "cf":           "44556677889",
-    "risk_score":   0.80,
-    "ateco":        "41.30",
+    "cf": "44556677889",
+    "risk_score": 0.80,
+    "ateco": "41.30",
 }
 
 _CAND_ANOMALY_MATCH = {
-    "company_id":    "cand-005",
-    "company_name":  "VIOLA APPALTI SRL",
-    "cf":            "33445566778",
-    "risk_score":    0.55,
+    "company_id": "cand-005",
+    "company_name": "VIOLA APPALTI SRL",
+    "cf": "33445566778",
+    "risk_score": 0.55,
     "anomaly_flags": ["high_single_bidder_ratio", "high_buyer_concentration"],
 }
 
@@ -91,19 +88,20 @@ _CAND_ANOMALY_MATCH = {
 # Mock factory
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _make_conn(
-    source_rows: Optional[List[Dict]] = None,
-    content_rows: Optional[List[Dict]] = None,
-    community_rows: Optional[List[Dict]] = None,
-    anomaly_rows: Optional[List[Dict]] = None,
-    sector_rows: Optional[List[Dict]] = None,
+    source_rows: list[dict] | None = None,
+    content_rows: list[dict] | None = None,
+    community_rows: list[dict] | None = None,
+    anomaly_rows: list[dict] | None = None,
+    sector_rows: list[dict] | None = None,
 ) -> MagicMock:
     """
     Build a mock Neo4jConnection whose run_query() dispatches by Cypher keyword.
     """
     conn = MagicMock()
 
-    def _run_query(cypher: str, params: Dict = None) -> List[Dict]:
+    def _run_query(cypher: str, params: dict = None) -> list[dict]:
         # Source company lookup — keyed by "c.id = $cid OR c.cf = $cid"
         if "c.id = $cid OR c.cf = $cid" in cypher:
             return source_rows if source_rows is not None else [_SOURCE]
@@ -129,6 +127,7 @@ def _make_conn(
 # TestRiskTier
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestRiskTier:
     def test_high_boundary(self):
         assert _risk_tier(0.70) == "HIGH"
@@ -149,6 +148,7 @@ class TestRiskTier:
 # ─────────────────────────────────────────────────────────────────────────────
 # TestJaccard
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestJaccard:
     def test_identical_lists(self):
@@ -175,6 +175,7 @@ class TestJaccard:
 # TestAteco2
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestAteco2:
     def test_normal(self):
         assert _ateco2("41.20") == "41"
@@ -196,6 +197,7 @@ class TestAteco2:
 # TestMerge (deduplication helper)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _make_rec(company_id: str, score: float, strategy: str) -> Recommendation:
     return Recommendation(
         company_id=company_id,
@@ -211,33 +213,33 @@ def _make_rec(company_id: str, score: float, strategy: str) -> Recommendation:
 
 class TestMerge:
     def test_new_entry(self):
-        registry: Dict[str, Recommendation] = {}
+        registry: dict[str, Recommendation] = {}
         rec = _make_rec("c1", 0.7, "content")
         _merge(registry, rec, "content")
         assert "c1" in registry
         assert registry["c1"].similarity_score == 0.7
 
     def test_keeps_higher_score(self):
-        registry: Dict[str, Recommendation] = {}
+        registry: dict[str, Recommendation] = {}
         _merge(registry, _make_rec("c1", 0.5, "content"), "content")
         _merge(registry, _make_rec("c1", 0.8, "community"), "community")
         assert registry["c1"].similarity_score == 0.8
 
     def test_accumulates_strategies(self):
-        registry: Dict[str, Recommendation] = {}
+        registry: dict[str, Recommendation] = {}
         _merge(registry, _make_rec("c1", 0.5, "content"), "content")
         _merge(registry, _make_rec("c1", 0.6, "community"), "community")
         assert "community" in registry["c1"].strategies
         assert "content" in registry["c1"].strategies
 
     def test_no_strategy_duplicate(self):
-        registry: Dict[str, Recommendation] = {}
+        registry: dict[str, Recommendation] = {}
         _merge(registry, _make_rec("c1", 0.5, "content"), "content")
         _merge(registry, _make_rec("c1", 0.6, "content"), "content")
         assert registry["c1"].strategies.count("content") == 1
 
     def test_accumulates_shared_features(self):
-        registry: Dict[str, Recommendation] = {}
+        registry: dict[str, Recommendation] = {}
         r1 = _make_rec("c1", 0.5, "content")
         r1.shared_features = ["ATECO:41"]
         r2 = _make_rec("c1", 0.6, "community")
@@ -251,6 +253,7 @@ class TestMerge:
 # ─────────────────────────────────────────────────────────────────────────────
 # TestContentBased
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestContentBased:
     def _engine(self, content_rows):
@@ -288,7 +291,9 @@ class TestContentBased:
 
     def test_capped_at_50_results(self):
         # Flood with 100 identical candidates — should cap at 50
-        many = [dict(_CAND_SAME_SECTOR_REGION, company_id=f"c{i}", cf=f"{i:011d}") for i in range(100)]
+        many = [
+            dict(_CAND_SAME_SECTOR_REGION, company_id=f"c{i}", cf=f"{i:011d}") for i in range(100)
+        ]
         engine = self._engine(many)
         assert len(engine._content_based(_SOURCE)) <= 50
 
@@ -296,6 +301,7 @@ class TestContentBased:
 # ─────────────────────────────────────────────────────────────────────────────
 # TestCommunityBased
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestCommunityBased:
     def _engine(self, community_rows=None, source_override=None):
@@ -316,7 +322,9 @@ class TestCommunityBased:
 
     def test_no_community_id_returns_empty(self):
         source_no_community = dict(_SOURCE, community_id=None)
-        engine = self._engine(community_rows=[_CAND_COMMUNITY_MEMBER], source_override=source_no_community)
+        engine = self._engine(
+            community_rows=[_CAND_COMMUNITY_MEMBER], source_override=source_no_community
+        )
         recs = engine._community_based(source_no_community)
         assert recs == []
 
@@ -329,6 +337,7 @@ class TestCommunityBased:
 # ─────────────────────────────────────────────────────────────────────────────
 # TestAnomalyBased
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestAnomalyBased:
     def _engine(self, anomaly_rows=None):
@@ -364,6 +373,7 @@ class TestAnomalyBased:
 # TestSectorTrending
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestSectorTrending:
     def _engine(self, sector_rows=None):
         conn = _make_conn(sector_rows=sector_rows)
@@ -398,6 +408,7 @@ class TestSectorTrending:
 # ─────────────────────────────────────────────────────────────────────────────
 # TestRecommend (full integration — offline)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestRecommend:
     def _engine_full(self):
@@ -490,6 +501,7 @@ class TestRecommend:
 # TestRendering
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _make_result(n_recs: int = 2) -> RecommendationResult:
     recs = [
         Recommendation(
@@ -500,7 +512,7 @@ def _make_result(n_recs: int = 2) -> RecommendationResult:
             similarity_score=0.8 - i * 0.1,
             reason=f"reason {i}.",
             strategies=["content"],
-            shared_features=[f"ATECO:41", f"regione:Lombardia"],
+            shared_features=["ATECO:41", "regione:Lombardia"],
         )
         for i in range(n_recs)
     ]
@@ -570,6 +582,7 @@ class TestRendering:
 # TestEdgeCases
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestEdgeCases:
     def test_no_recommendations_at_all(self):
         conn = _make_conn(content_rows=[], community_rows=[], anomaly_rows=[], sector_rows=[])
@@ -587,7 +600,13 @@ class TestEdgeCases:
 
     def test_zero_risk_source(self):
         source_zero = dict(_SOURCE, risk_score=0.0, anomaly_flags=[])
-        conn = _make_conn(source_rows=[source_zero], content_rows=[], community_rows=[], anomaly_rows=[], sector_rows=[])
+        conn = _make_conn(
+            source_rows=[source_zero],
+            content_rows=[],
+            community_rows=[],
+            anomaly_rows=[],
+            sector_rows=[],
+        )
         engine = RecommendationEngine(conn)
         result = engine.recommend("src-001")
         assert result.source_risk_score == 0.0
@@ -595,9 +614,9 @@ class TestEdgeCases:
 
     def test_community_only_strategy_skips_others(self):
         """community strategy should not trigger content/anomaly/sector queries."""
-        call_log: List[str] = []
+        call_log: list[str] = []
 
-        def _tracking_query(cypher: str, params: Dict = None) -> List[Dict]:
+        def _tracking_query(cypher: str, params: dict = None) -> list[dict]:
             call_log.append(cypher)
             if "c.id = $cid OR c.cf = $cid" in cypher:
                 return [_SOURCE]

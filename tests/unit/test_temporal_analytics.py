@@ -9,12 +9,11 @@ at the instance level via ``MagicMock``.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from paladino.analytics.temporal_analytics import TemporalAnalyzer, _warn_no_dates
-
 
 # ──────────────────────────────────────────────────────────────────────
 # Fixtures
@@ -53,9 +52,27 @@ class TestWarnEmpty:
 
 class TestGetTenderVolumeTrend:
     _MOCK_ROWS = [
-        {"year": 2023, "quarter": 1, "tender_count": 5, "total_value": 100_000, "avg_value": 20_000},
-        {"year": 2023, "quarter": 2, "tender_count": 7, "total_value": 140_000, "avg_value": 20_000},
-        {"year": 2023, "quarter": 3, "tender_count": 12, "total_value": 300_000, "avg_value": 25_000},
+        {
+            "year": 2023,
+            "quarter": 1,
+            "tender_count": 5,
+            "total_value": 100_000,
+            "avg_value": 20_000,
+        },
+        {
+            "year": 2023,
+            "quarter": 2,
+            "tender_count": 7,
+            "total_value": 140_000,
+            "avg_value": 20_000,
+        },
+        {
+            "year": 2023,
+            "quarter": 3,
+            "tender_count": 12,
+            "total_value": 300_000,
+            "avg_value": 25_000,
+        },
     ]
 
     def test_returns_rows(self, ta, mock_conn):
@@ -98,15 +115,21 @@ class TestGetTenderVolumeTrend:
 class TestGetSingleBidderTrend:
     _MOCK_ROWS = [
         {
-            "company_id": "CF001", "company_name": "Acme Costruzioni",
-            "year": 2023, "quarter": 1,
-            "total_wins": 10, "single_bidder_wins": 8,
+            "company_id": "CF001",
+            "company_name": "Acme Costruzioni",
+            "year": 2023,
+            "quarter": 1,
+            "total_wins": 10,
+            "single_bidder_wins": 8,
             "single_bidder_ratio": 0.8,
         },
         {
-            "company_id": "CF001", "company_name": "Acme Costruzioni",
-            "year": 2023, "quarter": 2,
-            "total_wins": 12, "single_bidder_wins": 12,
+            "company_id": "CF001",
+            "company_name": "Acme Costruzioni",
+            "year": 2023,
+            "quarter": 2,
+            "total_wins": 12,
+            "single_bidder_wins": 12,
             "single_bidder_ratio": 1.0,
         },
     ]
@@ -150,17 +173,73 @@ class TestDetectSuddenSpikes:
     """
 
     _SPIKE_ROWS = [
-        {"company_id": "CF001", "company_name": "Alpha", "year": 2022, "quarter": 3, "tender_count": 2,  "total_value": 40_000},
-        {"company_id": "CF001", "company_name": "Alpha", "year": 2022, "quarter": 4, "tender_count": 2,  "total_value": 40_000},
-        {"company_id": "CF001", "company_name": "Alpha", "year": 2023, "quarter": 1, "tender_count": 3,  "total_value": 60_000},
-        {"company_id": "CF001", "company_name": "Alpha", "year": 2023, "quarter": 2, "tender_count": 10, "total_value": 200_000},
+        {
+            "company_id": "CF001",
+            "company_name": "Alpha",
+            "year": 2022,
+            "quarter": 3,
+            "tender_count": 2,
+            "total_value": 40_000,
+        },
+        {
+            "company_id": "CF001",
+            "company_name": "Alpha",
+            "year": 2022,
+            "quarter": 4,
+            "tender_count": 2,
+            "total_value": 40_000,
+        },
+        {
+            "company_id": "CF001",
+            "company_name": "Alpha",
+            "year": 2023,
+            "quarter": 1,
+            "tender_count": 3,
+            "total_value": 60_000,
+        },
+        {
+            "company_id": "CF001",
+            "company_name": "Alpha",
+            "year": 2023,
+            "quarter": 2,
+            "tender_count": 10,
+            "total_value": 200_000,
+        },
     ]
 
     _FLAT_ROWS = [
-        {"company_id": "CF002", "company_name": "Beta", "year": 2022, "quarter": 3, "tender_count": 5, "total_value": 100_000},
-        {"company_id": "CF002", "company_name": "Beta", "year": 2022, "quarter": 4, "tender_count": 5, "total_value": 100_000},
-        {"company_id": "CF002", "company_name": "Beta", "year": 2023, "quarter": 1, "tender_count": 5, "total_value": 100_000},
-        {"company_id": "CF002", "company_name": "Beta", "year": 2023, "quarter": 2, "tender_count": 5, "total_value": 100_000},
+        {
+            "company_id": "CF002",
+            "company_name": "Beta",
+            "year": 2022,
+            "quarter": 3,
+            "tender_count": 5,
+            "total_value": 100_000,
+        },
+        {
+            "company_id": "CF002",
+            "company_name": "Beta",
+            "year": 2022,
+            "quarter": 4,
+            "tender_count": 5,
+            "total_value": 100_000,
+        },
+        {
+            "company_id": "CF002",
+            "company_name": "Beta",
+            "year": 2023,
+            "quarter": 1,
+            "tender_count": 5,
+            "total_value": 100_000,
+        },
+        {
+            "company_id": "CF002",
+            "company_name": "Beta",
+            "year": 2023,
+            "quarter": 2,
+            "tender_count": 5,
+            "total_value": 100_000,
+        },
     ]
 
     def test_spike_detected(self, ta, mock_conn):
@@ -194,10 +273,38 @@ class TestDetectSuddenSpikes:
     def test_result_sorted_by_spike_ratio_desc(self, ta, mock_conn):
         # Two companies — CF001 spikes at 4×, hypothetical CF003 spikes at 3×
         rows = self._SPIKE_ROWS + [
-            {"company_id": "CF003", "company_name": "Gamma", "year": 2022, "quarter": 3, "tender_count": 2, "total_value": 40_000},
-            {"company_id": "CF003", "company_name": "Gamma", "year": 2022, "quarter": 4, "tender_count": 2, "total_value": 40_000},
-            {"company_id": "CF003", "company_name": "Gamma", "year": 2023, "quarter": 1, "tender_count": 2, "total_value": 40_000},
-            {"company_id": "CF003", "company_name": "Gamma", "year": 2023, "quarter": 2, "tender_count": 7, "total_value": 140_000},
+            {
+                "company_id": "CF003",
+                "company_name": "Gamma",
+                "year": 2022,
+                "quarter": 3,
+                "tender_count": 2,
+                "total_value": 40_000,
+            },
+            {
+                "company_id": "CF003",
+                "company_name": "Gamma",
+                "year": 2022,
+                "quarter": 4,
+                "tender_count": 2,
+                "total_value": 40_000,
+            },
+            {
+                "company_id": "CF003",
+                "company_name": "Gamma",
+                "year": 2023,
+                "quarter": 1,
+                "tender_count": 2,
+                "total_value": 40_000,
+            },
+            {
+                "company_id": "CF003",
+                "company_name": "Gamma",
+                "year": 2023,
+                "quarter": 2,
+                "tender_count": 7,
+                "total_value": 140_000,
+            },
         ]
         mock_conn.run_query.return_value = rows
         result = ta.detect_sudden_spikes(metric="tender_count", threshold=2.0)
@@ -211,12 +318,16 @@ class TestDetectSuddenSpikes:
         for i in range(50):
             cf = f"CF{i:03d}"
             for q in range(1, 5):
-                rows.append({
-                    "company_id": cf, "company_name": f"Co{i}",
-                    "year": 2023, "quarter": q,
-                    "tender_count": 2 if q < 4 else 100,
-                    "total_value": 10_000,
-                })
+                rows.append(
+                    {
+                        "company_id": cf,
+                        "company_name": f"Co{i}",
+                        "year": 2023,
+                        "quarter": q,
+                        "tender_count": 2 if q < 4 else 100,
+                        "total_value": 10_000,
+                    }
+                )
         mock_conn.run_query.return_value = rows
         result = ta.detect_sudden_spikes(limit=10)
         assert len(result) <= 10
@@ -235,8 +346,7 @@ class TestDetectSuddenSpikes:
 
 class TestGetSeasonalPatterns:
     _MOCK_ROWS = [
-        {"month": m, "tender_count": m * 10, "total_value": m * 100_000}
-        for m in range(1, 13)
+        {"month": m, "tender_count": m * 10, "total_value": m * 100_000} for m in range(1, 13)
     ]
 
     def test_month_names_added(self, ta, mock_conn):
@@ -265,9 +375,24 @@ class TestGetSeasonalPatterns:
 
 class TestGetRiskScoreHistory:
     _MOCK_HISTORY = [
-        {"company_id": "CF001", "risk_score": 0.85, "change_date": "2024-01-15", "anomaly_flags": None},
-        {"company_id": "CF001", "risk_score": 0.72, "change_date": "2023-10-15", "anomaly_flags": None},
-        {"company_id": "CF001", "risk_score": 0.55, "change_date": "2023-07-15", "anomaly_flags": None},
+        {
+            "company_id": "CF001",
+            "risk_score": 0.85,
+            "change_date": "2024-01-15",
+            "anomaly_flags": None,
+        },
+        {
+            "company_id": "CF001",
+            "risk_score": 0.72,
+            "change_date": "2023-10-15",
+            "anomaly_flags": None,
+        },
+        {
+            "company_id": "CF001",
+            "risk_score": 0.55,
+            "change_date": "2023-07-15",
+            "anomaly_flags": None,
+        },
     ]
 
     def test_returns_ordered_snapshots(self, ta, mock_conn):
@@ -335,8 +460,22 @@ class TestGetBuyerConcentrationTrend:
 
 class TestGetSectorSpendingVolatility:
     _MOCK_SECTORS = [
-        {"ateco_prefix": "C28", "year": 2023, "quarter": 1, "company_count": 5, "total_value": 500_000, "stddev_value": 20_000},
-        {"ateco_prefix": "C28", "year": 2023, "quarter": 2, "company_count": 5, "total_value": 750_000, "stddev_value": 80_000},
+        {
+            "ateco_prefix": "C28",
+            "year": 2023,
+            "quarter": 1,
+            "company_count": 5,
+            "total_value": 500_000,
+            "stddev_value": 20_000,
+        },
+        {
+            "ateco_prefix": "C28",
+            "year": 2023,
+            "quarter": 2,
+            "company_count": 5,
+            "total_value": 750_000,
+            "stddev_value": 80_000,
+        },
     ]
 
     def test_returns_sector_rows(self, ta, mock_conn):

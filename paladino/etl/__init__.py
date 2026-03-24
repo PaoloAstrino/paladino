@@ -1,5 +1,5 @@
 """ETL package for structured and unstructured ingestion pipelines."""
 
-from paladino.etl.universal_ingestor import UniversalIngestor, RoutingDecision
+from paladino.etl.universal_ingestor import RoutingDecision, UniversalIngestor
 
 __all__ = ["UniversalIngestor", "RoutingDecision"]

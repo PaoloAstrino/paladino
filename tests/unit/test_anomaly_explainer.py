@@ -16,55 +16,55 @@ from paladino.analytics.anomaly_explainer import (
     AnomalyExplainer,
     ExplanationResult,
     FactorExplanation,
-    EvidenceLink,
     _risk_tier,
-    _render_markdown,
-    _render_text,
 )
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mock connection factory
 # ─────────────────────────────────────────────────────────────────────────────
 
 _COMPANY_ROW = {
-    "company_id":      "CMP001",
-    "cf":              "12345678901",
-    "company_name":    "COSTRUZIONI ROSSI SRL",
-    "risk_score":      0.73,
-    "anomaly_flags":   ["high_single_bidder_ratio", "market_dominance_high"],
+    "company_id": "CMP001",
+    "cf": "12345678901",
+    "company_name": "COSTRUZIONI ROSSI SRL",
+    "risk_score": 0.73,
+    "anomaly_flags": ["high_single_bidder_ratio", "market_dominance_high"],
     "centrality_score": 0.58,
-    "community_id":    42,
+    "community_id": 42,
 }
 
 _SBR_ROW = {
-    "total_wins":         15,
+    "total_wins": 15,
     "single_bidder_wins": 10,
-    "ratio":              0.667,
-    "sample_tender_ids":  ["T001", "T002", "T003"],
+    "ratio": 0.667,
+    "sample_tender_ids": ["T001", "T002", "T003"],
 }
 
 _CENTRALITY_ROW = {"centrality_score": 0.58}
 
 _BUYER_CONC_ROW = {
     "concentration_ratio": 0.90,
-    "top_buyer_id":        "B001",
-    "top_buyer_name":      "COMUNE DI ROMA",
+    "top_buyer_id": "B001",
+    "top_buyer_name": "COMUNE DI ROMA",
 }
 
 _FRAUD_PATTERN_ROW = {
-    "pattern_id":  "fp-uuid-001",
+    "pattern_id": "fp-uuid-001",
     "pattern_name": "bid_rotation",
-    "severity":    "high",
-    "confidence":  0.85,
+    "severity": "high",
+    "confidence": 0.85,
     "description": "Company participates in bid-rotation ring.",
-    "created_at":  "2026-01-15T10:00:00",
+    "created_at": "2026-01-15T10:00:00",
     "entity_score": 0.80,
     "evidence_json": "{}",
 }
 
 _HISTORY_ROWS = [
-    {"risk_score": 0.68, "change_date": "2026-01-01", "anomaly_flags": ["high_single_bidder_ratio"]},
+    {
+        "risk_score": 0.68,
+        "change_date": "2026-01-01",
+        "anomaly_flags": ["high_single_bidder_ratio"],
+    },
     {"risk_score": 0.55, "change_date": "2025-10-01", "anomaly_flags": []},
 ]
 
@@ -75,13 +75,13 @@ def _make_conn(overrides: dict | None = None) -> MagicMock:
     *overrides* replaces specific keyword-keyed defaults.
     """
     defaults = {
-        "WHERE c.id = $cid OR c.cf":         [_COMPANY_ROW],
-        "t.single_bidder":                   [_SBR_ROW],
-        "centrality_score":                  [_CENTRALITY_ROW],
-        "concentration_ratio":               [_BUYER_CONC_ROW],
-        "FLAGGED_BY":                        [_FRAUD_PATTERN_ROW],
-        "HAS_SHELL_SCORE":                   [],           # no cached shell score
-        "HAS_VERSION":                       _HISTORY_ROWS,
+        "WHERE c.id = $cid OR c.cf": [_COMPANY_ROW],
+        "t.single_bidder": [_SBR_ROW],
+        "centrality_score": [_CENTRALITY_ROW],
+        "concentration_ratio": [_BUYER_CONC_ROW],
+        "FLAGGED_BY": [_FRAUD_PATTERN_ROW],
+        "HAS_SHELL_SCORE": [],  # no cached shell score
+        "HAS_VERSION": _HISTORY_ROWS,
     }
     if overrides:
         defaults.update(overrides)
@@ -112,30 +112,50 @@ def _explainer(overrides=None) -> AnomalyExplainer:
 # _risk_tier helper
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestRiskTier:
-    def test_high(self):    assert _risk_tier(0.75) == "HIGH"
-    def test_medium(self):  assert _risk_tier(0.55) == "MEDIUM"
-    def test_low(self):     assert _risk_tier(0.20) == "LOW"
-    def test_boundary_high(self):   assert _risk_tier(0.70) == "HIGH"
-    def test_boundary_medium(self): assert _risk_tier(0.40) == "MEDIUM"
+    def test_high(self):
+        assert _risk_tier(0.75) == "HIGH"
+
+    def test_medium(self):
+        assert _risk_tier(0.55) == "MEDIUM"
+
+    def test_low(self):
+        assert _risk_tier(0.20) == "LOW"
+
+    def test_boundary_high(self):
+        assert _risk_tier(0.70) == "HIGH"
+
+    def test_boundary_medium(self):
+        assert _risk_tier(0.40) == "MEDIUM"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FactorExplanation
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestFactorExplanation:
     def test_instantiation(self):
         f = FactorExplanation(
-            factor="single_bidder_ratio", label="SBR", value=0.68,
-            weight=0.4, contribution=0.272, sentence="68% single-bidder.",
+            factor="single_bidder_ratio",
+            label="SBR",
+            value=0.68,
+            weight=0.4,
+            contribution=0.272,
+            sentence="68% single-bidder.",
         )
         assert f.sources == []
 
     def test_non_empty_sources(self):
         f = FactorExplanation(
-            factor="x", label="x", value=0.1, weight=0.3, contribution=0.03,
-            sentence="s", sources=["Tender:T1"],
+            factor="x",
+            label="x",
+            value=0.1,
+            weight=0.3,
+            contribution=0.03,
+            sentence="s",
+            sources=["Tender:T1"],
         )
         assert "Tender:T1" in f.sources
 
@@ -143,6 +163,7 @@ class TestFactorExplanation:
 # ─────────────────────────────────────────────────────────────────────────────
 # AnomalyExplainer.explain — structure & content
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestExplainResult:
     def _get(self) -> ExplanationResult:
@@ -215,6 +236,7 @@ class TestExplainResult:
 
     def test_generated_at_is_iso(self):
         from datetime import datetime
+
         r = self._get()
         datetime.fromisoformat(r.generated_at.replace("Z", "+00:00"))
 
@@ -227,6 +249,7 @@ class TestExplainResult:
 # ─────────────────────────────────────────────────────────────────────────────
 # Individual factor explanations
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestFactors:
     def _factors(self) -> dict:
@@ -246,7 +269,11 @@ class TestFactors:
 
     def test_centrality_sentence_contains_pagerank(self):
         f = self._factors()["market_dominance"]
-        assert "pagerank" in f.sentence.lower() or "centrality" in f.sentence.lower() or "0.58" in f.sentence
+        assert (
+            "pagerank" in f.sentence.lower()
+            or "centrality" in f.sentence.lower()
+            or "0.58" in f.sentence
+        )
 
     def test_buyer_conc_sentence_contains_buyer_name(self):
         f = self._factors()["buyer_concentration"]
@@ -260,6 +287,7 @@ class TestFactors:
 # ─────────────────────────────────────────────────────────────────────────────
 # ExplanationResult — serialisation & rendering
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestRendering:
     def _result(self) -> ExplanationResult:
@@ -275,9 +303,17 @@ class TestRendering:
         r = self._result()
         data = json.loads(r.render("json"))
         expected = {
-            "company_id", "company_name", "risk_score", "risk_tier",
-            "summary", "factors", "fraud_patterns", "evidence_chain",
-            "trend", "risk_history", "generated_at",
+            "company_id",
+            "company_name",
+            "risk_score",
+            "risk_tier",
+            "summary",
+            "factors",
+            "fraud_patterns",
+            "evidence_chain",
+            "trend",
+            "risk_history",
+            "generated_at",
         }
         assert expected.issubset(data.keys())
 
@@ -309,12 +345,15 @@ class TestRendering:
 # Edge cases — missing data
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestEdgeCases:
     def test_no_tenders(self):
-        r = _explainer({
-            "t.single_bidder":     [],
-            "concentration_ratio": [],
-        }).explain("CMP001")
+        r = _explainer(
+            {
+                "t.single_bidder": [],
+                "concentration_ratio": [],
+            }
+        ).explain("CMP001")
         # Should still produce a result
         assert isinstance(r, ExplanationResult)
         factor_names = {f.factor for f in r.factors}

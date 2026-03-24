@@ -16,27 +16,26 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Dict, List, Optional
 
 import polars as pl
 from loguru import logger
 
 from paladino.etl.corporate.download import (
-    SourceFile,
-    _norm,
     _COMPANY_CF_VARIANTS,
     _PERSON_CF_VARIANTS,
-    _SHAREHOLDERCF_VARIANTS,
-    _ROLE_VARIANTS,
     _QUOTA_VARIANTS,
+    _ROLE_VARIANTS,
+    _SHAREHOLDERCF_VARIANTS,
+    SourceFile,
+    _norm,
 )
-
 
 # ─────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────
 
-def _find_col(columns: List[str], variants: set[str]) -> Optional[str]:
+
+def _find_col(columns: list[str], variants: set[str]) -> str | None:
     """Return the first column whose normalised name is in variants, or None."""
     for c in columns:
         if _norm(c) in variants:
@@ -55,6 +54,7 @@ def _read_csv(path, **kwargs) -> pl.DataFrame:
 # ─────────────────────────────────────────────────────────
 # Transformer
 # ─────────────────────────────────────────────────────────
+
 
 class CorporateTransformer:
     """
@@ -76,14 +76,14 @@ class CorporateTransformer:
 
     def __init__(self, dataset_version: str = "2026-02") -> None:
         self.dataset_version = dataset_version
-        self.retrieval_date  = datetime.now().isoformat()
+        self.retrieval_date = datetime.now().isoformat()
 
     # ── public interface ─────────────────────────────────
 
     def transform_all(
         self,
-        source_files: List[SourceFile],
-    ) -> Dict[str, pl.DataFrame]:
+        source_files: list[SourceFile],
+    ) -> dict[str, pl.DataFrame]:
         """
         Process all files from a discovery run.
 
@@ -92,9 +92,9 @@ class CorporateTransformer:
 
         Always returns the dict even when all frames are empty.
         """
-        all_persons:     List[pl.DataFrame] = []
-        all_represents:  List[pl.DataFrame] = []
-        all_shareholder: List[pl.DataFrame] = []
+        all_persons: list[pl.DataFrame] = []
+        all_represents: list[pl.DataFrame] = []
+        all_shareholder: list[pl.DataFrame] = []
 
         for sf in source_files:
             if sf.schema_type == "unknown":
@@ -104,7 +104,9 @@ class CorporateTransformer:
                 )
                 continue
 
-            logger.info(f"Transforming {sf.path.name}  [{sf.schema_type}]  ≈{sf.row_estimate:,} rows")
+            logger.info(
+                f"Transforming {sf.path.name}  [{sf.schema_type}]  ≈{sf.row_estimate:,} rows"
+            )
             try:
                 df = _read_csv(sf.path)
                 if df.is_empty():
@@ -126,28 +128,39 @@ class CorporateTransformer:
                     "The file will be skipped — fix the format and re-run."
                 )
 
-        def _vstack(frames: List[pl.DataFrame], schema: dict) -> pl.DataFrame:
+        def _vstack(frames: list[pl.DataFrame], schema: dict) -> pl.DataFrame:
             valid = [f for f in frames if not f.is_empty()]
             if not valid:
                 return pl.DataFrame(schema=schema)
             return pl.concat(valid, how="diagonal").unique()
 
         persons_schema = {
-            "cf": pl.Utf8, "nome": pl.Utf8, "cognome": pl.Utf8,
-            "id": pl.Utf8, "source": pl.Utf8, "dataset_version": pl.Utf8,
+            "cf": pl.Utf8,
+            "nome": pl.Utf8,
+            "cognome": pl.Utf8,
+            "id": pl.Utf8,
+            "source": pl.Utf8,
+            "dataset_version": pl.Utf8,
         }
         represents_schema = {
-            "person_cf": pl.Utf8, "company_cf": pl.Utf8, "ruolo": pl.Utf8,
-            "data_inizio": pl.Utf8, "data_fine": pl.Utf8, "source": pl.Utf8,
+            "person_cf": pl.Utf8,
+            "company_cf": pl.Utf8,
+            "ruolo": pl.Utf8,
+            "data_inizio": pl.Utf8,
+            "data_fine": pl.Utf8,
+            "source": pl.Utf8,
         }
         shareholding_schema = {
-            "source_cf": pl.Utf8, "company_cf": pl.Utf8, "quota": pl.Float64,
-            "data_rilevazione": pl.Utf8, "source": pl.Utf8,
+            "source_cf": pl.Utf8,
+            "company_cf": pl.Utf8,
+            "quota": pl.Float64,
+            "data_rilevazione": pl.Utf8,
+            "source": pl.Utf8,
         }
 
         return {
-            "persons_df":      _vstack(all_persons,     persons_schema),
-            "represents_df":   _vstack(all_represents,  represents_schema),
+            "persons_df": _vstack(all_persons, persons_schema),
+            "represents_df": _vstack(all_represents, represents_schema),
             "shareholding_df": _vstack(all_shareholder, shareholding_schema),
         }
 
@@ -162,8 +175,8 @@ class CorporateTransformer:
         cols = df.columns
 
         col_company_cf = _find_col(cols, _COMPANY_CF_VARIANTS)
-        col_person_cf  = _find_col(cols, _PERSON_CF_VARIANTS)
-        col_role       = _find_col(cols, _ROLE_VARIANTS)
+        col_person_cf = _find_col(cols, _PERSON_CF_VARIANTS)
+        col_role = _find_col(cols, _ROLE_VARIANTS)
 
         if not all([col_company_cf, col_person_cf, col_role]):
             logger.warning(
@@ -174,55 +187,69 @@ class CorporateTransformer:
             return pl.DataFrame(), pl.DataFrame()
 
         # Optional columns
-        col_nome    = next((c for c in cols if _norm(c) == "nome"),    None)
+        col_nome = next((c for c in cols if _norm(c) == "nome"), None)
         col_cognome = next((c for c in cols if _norm(c) == "cognome"), None)
-        col_start   = next((c for c in cols if _norm(c) in {"datainizio", "datastart", "inizio"}), None)
-        col_end     = next((c for c in cols if _norm(c) in {"datafine",   "dataend",  "fine"}),    None)
+        col_start = next(
+            (c for c in cols if _norm(c) in {"datainizio", "datastart", "inizio"}), None
+        )
+        col_end = next((c for c in cols if _norm(c) in {"datafine", "dataend", "fine"}), None)
 
         # Clean CFs
         df = df.filter(
-            pl.col(col_person_cf).is_not_null() &
-            (pl.col(col_person_cf).cast(pl.Utf8).str.strip_chars() != "")
+            pl.col(col_person_cf).is_not_null()
+            & (pl.col(col_person_cf).cast(pl.Utf8).str.strip_chars() != "")
         )
 
         # Build persons
         person_cols = [
             pl.col(col_person_cf).cast(pl.Utf8).str.strip_chars().str.to_uppercase().alias("cf"),
-            (pl.col(col_nome).cast(pl.Utf8).str.strip_chars()
-             if col_nome else pl.lit("")).alias("nome"),
-            (pl.col(col_cognome).cast(pl.Utf8).str.strip_chars()
-             if col_cognome else pl.lit("")).alias("cognome"),
+            (pl.col(col_nome).cast(pl.Utf8).str.strip_chars() if col_nome else pl.lit("")).alias(
+                "nome"
+            ),
+            (
+                pl.col(col_cognome).cast(pl.Utf8).str.strip_chars() if col_cognome else pl.lit("")
+            ).alias("cognome"),
         ]
         persons = (
             df.select(person_cols)
             .unique(subset=["cf"])
-            .with_columns([
-                pl.Series("id", [str(uuid.uuid4()) for _ in range(len(df.select(person_cols).unique(subset=["cf"])))]),
-                pl.lit(self.SOURCE_TAG).alias("source"),
-                pl.lit(self.dataset_version).alias("dataset_version"),
-            ])
+            .with_columns(
+                [
+                    pl.Series(
+                        "id",
+                        [
+                            str(uuid.uuid4())
+                            for _ in range(len(df.select(person_cols).unique(subset=["cf"])))
+                        ],
+                    ),
+                    pl.lit(self.SOURCE_TAG).alias("source"),
+                    pl.lit(self.dataset_version).alias("dataset_version"),
+                ]
+            )
         )
 
         # Build represents
         represents_cols = [
-            pl.col(col_person_cf).cast(pl.Utf8).str.strip_chars().str.to_uppercase().alias("person_cf"),
-            pl.col(col_company_cf).cast(pl.Utf8).str.strip_chars().str.to_uppercase().alias("company_cf"),
+            pl.col(col_person_cf)
+            .cast(pl.Utf8)
+            .str.strip_chars()
+            .str.to_uppercase()
+            .alias("person_cf"),
+            pl.col(col_company_cf)
+            .cast(pl.Utf8)
+            .str.strip_chars()
+            .str.to_uppercase()
+            .alias("company_cf"),
             pl.col(col_role).cast(pl.Utf8).str.strip_chars().alias("ruolo"),
             (pl.col(col_start).cast(pl.Utf8) if col_start else pl.lit(None)).alias("data_inizio"),
-            (pl.col(col_end).cast(pl.Utf8)   if col_end   else pl.lit(None)).alias("data_fine"),
+            (pl.col(col_end).cast(pl.Utf8) if col_end else pl.lit(None)).alias("data_fine"),
             pl.lit(self.SOURCE_TAG).alias("source"),
         ]
-        represents = (
-            df.select(represents_cols)
-            .filter(
-                pl.col("company_cf").is_not_null() &
-                (pl.col("company_cf").str.strip_chars() != "")
-            )
+        represents = df.select(represents_cols).filter(
+            pl.col("company_cf").is_not_null() & (pl.col("company_cf").str.strip_chars() != "")
         )
 
-        logger.info(
-            f"  ↳ directors: {len(persons)} persons, {len(represents)} REPRESENTS edges"
-        )
+        logger.info(f"  ↳ directors: {len(persons)} persons, {len(represents)} REPRESENTS edges")
         return persons, represents
 
     def _transform_shareholders(
@@ -234,8 +261,8 @@ class CorporateTransformer:
         cols = df.columns
 
         col_shareholder = _find_col(cols, _SHAREHOLDERCF_VARIANTS)
-        col_company_cf  = _find_col(cols, _COMPANY_CF_VARIANTS)
-        col_quota       = _find_col(cols, _QUOTA_VARIANTS)
+        col_company_cf = _find_col(cols, _COMPANY_CF_VARIANTS)
+        col_quota = _find_col(cols, _QUOTA_VARIANTS)
 
         if not all([col_shareholder, col_company_cf, col_quota]):
             logger.warning(
@@ -245,22 +272,30 @@ class CorporateTransformer:
             )
             return pl.DataFrame()
 
-        col_date = next(
-            (c for c in cols if _norm(c) in {"datarilevazione", "data", "date"}), None
-        )
+        col_date = next((c for c in cols if _norm(c) in {"datarilevazione", "data", "date"}), None)
 
         df = df.filter(
-            pl.col(col_shareholder).is_not_null() &
-            (pl.col(col_shareholder).cast(pl.Utf8).str.strip_chars() != "") &
-            pl.col(col_company_cf).is_not_null() &
-            (pl.col(col_company_cf).cast(pl.Utf8).str.strip_chars() != "")
+            pl.col(col_shareholder).is_not_null()
+            & (pl.col(col_shareholder).cast(pl.Utf8).str.strip_chars() != "")
+            & pl.col(col_company_cf).is_not_null()
+            & (pl.col(col_company_cf).cast(pl.Utf8).str.strip_chars() != "")
         )
 
         shareholding_cols = [
-            pl.col(col_shareholder).cast(pl.Utf8).str.strip_chars().str.to_uppercase().alias("source_cf"),
-            pl.col(col_company_cf).cast(pl.Utf8).str.strip_chars().str.to_uppercase().alias("company_cf"),
+            pl.col(col_shareholder)
+            .cast(pl.Utf8)
+            .str.strip_chars()
+            .str.to_uppercase()
+            .alias("source_cf"),
+            pl.col(col_company_cf)
+            .cast(pl.Utf8)
+            .str.strip_chars()
+            .str.to_uppercase()
+            .alias("company_cf"),
             pl.col(col_quota).cast(pl.Float64).clip(0.0, 100.0).alias("quota"),
-            (pl.col(col_date).cast(pl.Utf8) if col_date else pl.lit(self.retrieval_date)).alias("data_rilevazione"),
+            (pl.col(col_date).cast(pl.Utf8) if col_date else pl.lit(self.retrieval_date)).alias(
+                "data_rilevazione"
+            ),
             pl.lit(self.SOURCE_TAG).alias("source"),
         ]
         shareholding = df.select(shareholding_cols)

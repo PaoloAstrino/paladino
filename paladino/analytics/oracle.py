@@ -4,19 +4,21 @@ Generates an automatic investigative summary of the knowledge graph.
 """
 
 from loguru import logger
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
 from rich import box
-from paladino.db import Neo4jConnection
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+
 from paladino.constants import TEMPORAL_SPIKE_THRESHOLD
+from paladino.db import Neo4jConnection
+
 
 class Oracle:
     """
     Scans the graph for topological anomalies and high-risk patterns.
     Designed to be run after an ETL cycle.
     """
-    
+
     def __init__(self, conn: Neo4jConnection):
         self.conn = conn
         self.console = Console()
@@ -77,11 +79,13 @@ class Oracle:
         limit : int
             Maximum number of patterns to return.
         """
-        severity_order = "CASE f.severity " \
-                         "WHEN 'critical' THEN 1 " \
-                         "WHEN 'high'     THEN 2 " \
-                         "WHEN 'medium'   THEN 3 " \
-                         "ELSE                  4 END"
+        severity_order = (
+            "CASE f.severity "
+            "WHEN 'critical' THEN 1 "
+            "WHEN 'high'     THEN 2 "
+            "WHEN 'medium'   THEN 3 "
+            "ELSE                  4 END"
+        )
         return self.conn.run_query(
             f"""
             MATCH (f:FraudPattern)
@@ -192,10 +196,17 @@ class Oracle:
                    count(c) AS companies_with_influence
             """
         )
-        return result[0] if result else {
-            "persons": 0, "directors": 0, "shareholders": 0,
-            "ubo_edges": 0, "companies_with_influence": 0,
-        }
+        return (
+            result[0]
+            if result
+            else {
+                "persons": 0,
+                "directors": 0,
+                "shareholders": 0,
+                "ubo_edges": 0,
+                "companies_with_influence": 0,
+            }
+        )
 
     def get_board_overlap_companies(self, limit: int = 5):
         """
@@ -227,6 +238,7 @@ class Oracle:
         """
         try:
             from paladino.analytics.temporal_analytics import TemporalAnalyzer
+
             ta = TemporalAnalyzer(self.conn)
             return ta.detect_sudden_spikes(threshold=threshold, limit=limit)
         except Exception as exc:  # pragma: no cover
@@ -235,7 +247,9 @@ class Oracle:
 
     def run_investigative_summary(self):
         """Execute all scanners and print a beautiful report."""
-        self.console.print("[bold magenta]🔮 THE PALADINO ORACLE - PROACTIVE SUMMARY[/bold magenta]")
+        self.console.print(
+            "[bold magenta]🔮 THE PALADINO ORACLE - PROACTIVE SUMMARY[/bold magenta]"
+        )
         self.console.print("[dim]Scanning topological layers for structural risk...[/dim]")
 
         # 1. Influencers
@@ -246,7 +260,7 @@ class Oracle:
             table.add_column("Influence", justify="right", style="green")
             table.add_column("Risk Score", justify="right", style="yellow")
             for r in infl:
-                table.add_row(r['name'], f"{r['score']:.4f}", f"{r['risk']:.2f}")
+                table.add_row(r["name"], f"{r['score']:.4f}", f"{r['risk']:.2f}")
             self.console.print(table)
 
         # 2. Communities (Cartel Check)
@@ -258,7 +272,12 @@ class Oracle:
             table.add_column("Tenders", justify="right")
             table.add_column("Total Value (€)", justify="right", style="bold green")
             for r in cartels:
-                table.add_row(str(r['community']), str(r['companies']), str(r['tender_count']), f"{r['total_value']:,.2f}")
+                table.add_row(
+                    str(r["community"]),
+                    str(r["companies"]),
+                    str(r["tender_count"]),
+                    f"{r['total_value']:,.2f}",
+                )
             self.console.print(table)
 
         # 3. Monopolies
@@ -269,7 +288,7 @@ class Oracle:
             table.add_column("Ratio", justify="right", style="red")
             table.add_column("Wins", justify="right")
             for r in monop:
-                table.add_row(r['name'], f"{r['ratio']*100:.1f}%", str(r['total_wins']))
+                table.add_row(r["name"], f"{r['ratio'] * 100:.1f}%", str(r["total_wins"]))
             self.console.print(table)
 
         # 4. Fraud Pattern Alerts
@@ -300,8 +319,9 @@ class Oracle:
             table.add_column("Count", justify="right", style="bold")
             table.add_column("Last Seen", style="dim")
             for r in fraud_summary:
-                color = {"critical": "red", "high": "yellow",
-                         "medium": "cyan", "low": "green"}.get(r["severity"], "white")
+                color = {"critical": "red", "high": "yellow", "medium": "cyan", "low": "green"}.get(
+                    r["severity"], "white"
+                )
                 table.add_row(
                     r["pattern"],
                     f"[{color}]{r['severity'].upper()}[/{color}]",
@@ -388,7 +408,7 @@ class Oracle:
             for r in spikes:
                 table.add_row(
                     r.get("company_name") or r.get("company_id", "?"),
-                    f"{r.get('latest_year','?')} Q{r.get('latest_quarter','?')}",
+                    f"{r.get('latest_year', '?')} Q{r.get('latest_quarter', '?')}",
                     str(int(r.get("latest_value", 0))),
                     str(round(r.get("prior_mean", 0), 1)),
                     f"{r.get('spike_ratio', 0):.2f}×",
@@ -407,13 +427,17 @@ class Oracle:
             )
 
         self.console.print()
-        self.console.print("[bold green]Scan Complete.[/bold green] "
-                           "Use the REPL to investigate specific communities, companies, "
-                           "or fraud patterns.")
+        self.console.print(
+            "[bold green]Scan Complete.[/bold green] "
+            "Use the REPL to investigate specific communities, companies, "
+            "or fraud patterns."
+        )
         self.console.print()
+
 
 if __name__ == "__main__":
     from paladino.db import Neo4jConnection
+
     conn = Neo4jConnection()
     oracle = Oracle(conn)
     oracle.run_investigative_summary()

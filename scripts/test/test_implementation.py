@@ -9,14 +9,16 @@ Usage:
 """
 
 import sys
+
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
-from rich.table import Table
-from rich import box
-from paladino.db import get_driver
+
 from paladino.app.graphrag_agent import CypherQueryTemplates
+from paladino.db import get_driver
 
 console = Console()
+
 
 def test_connection():
     """Test 1: Neo4j Connection"""
@@ -32,6 +34,7 @@ def test_connection():
         console.print(f"[red]❌ FAIL[/red] - {e}\n")
         return False
 
+
 def test_data_loaded():
     """Test 2: Data is loaded"""
     console.print(Panel("TEST 2: Data Loaded", style="bold cyan"))
@@ -45,6 +48,7 @@ def test_data_loaded():
         else:
             console.print("[red]❌ FAIL[/red] - No data loaded\n")
             return False
+
 
 def test_node_types():
     """Test 3: Multiple node types exist"""
@@ -67,6 +71,7 @@ def test_node_types():
             console.print("[red]❌ FAIL[/red] - Not enough node types\n")
             return False
 
+
 def test_relationships():
     """Test 4: Relationships exist"""
     console.print(Panel("TEST 4: Relationships", style="bold cyan"))
@@ -87,6 +92,7 @@ def test_relationships():
         else:
             console.print("[red]❌ FAIL[/red] - Not enough relationships\n")
             return False
+
 
 def test_companies():
     """Test 5: Company data query"""
@@ -111,6 +117,7 @@ def test_companies():
             console.print("[yellow]⚠️  WARNING[/yellow] - No company data\n")
             return False
 
+
 def test_cross_source():
     """Test 6: Cross-source links (ANAC to OpenCUP)"""
     console.print(Panel("TEST 6: Cross-Source Links", style="bold cyan"))
@@ -132,6 +139,7 @@ def test_cross_source():
         else:
             console.print("[yellow]⚠️  WARNING[/yellow] - No cross-source links yet\n")
             return False
+
 
 def test_geographic():
     """Test 7: Geographic data"""
@@ -156,6 +164,7 @@ def test_geographic():
             console.print("[yellow]⚠️  WARNING[/yellow] - No geographic data\n")
             return False
 
+
 def test_templates():
     """Test 8: Query templates"""
     console.print(Panel("TEST 8: Query Templates", style="bold cyan"))
@@ -174,6 +183,7 @@ def test_templates():
     except Exception as e:
         console.print(f"[red]❌ FAIL[/red] - {e}\n")
         return False
+
 
 def test_buyer_data():
     """Test 9: Buyer data"""
@@ -198,6 +208,7 @@ def test_buyer_data():
             console.print("[yellow]⚠️  WARNING[/yellow] - No buyer data\n")
             return False
 
+
 def test_versioning():
     """Test 10: Data versioning/provenance"""
     console.print(Panel("TEST 10: Data Versioning", style="bold cyan"))
@@ -211,15 +222,17 @@ def test_versioning():
             console.print("[yellow]⚠️  WARNING[/yellow] - No version tracking\n")
             return False
 
+
 def main():
     """Run all tests."""
     console.print("\n")
-    console.print(Panel.fit(
-        "PALADINO IMPLEMENTATION TEST SUITE\n" +
-        "Testing all working features",
-        style="bold magenta",
-        box=box.DOUBLE
-    ))
+    console.print(
+        Panel.fit(
+            "PALADINO IMPLEMENTATION TEST SUITE\n" + "Testing all working features",
+            style="bold magenta",
+            box=box.DOUBLE,
+        )
+    )
     console.print()
 
     tests = [
@@ -247,12 +260,12 @@ def main():
     # Summary
     passed = sum(results)
     total = len(results)
-    
-    console.print("\n" + "="*60)
+
+    console.print("\n" + "=" * 60)
     console.print("TEST SUMMARY")
-    console.print("="*60)
+    console.print("=" * 60)
     console.print(f"\nPassed: {passed}/{total}")
-    
+
     if passed == total:
         console.print("\n[green]🎉 ALL TESTS PASSED![/green]")
         console.print("\n[bold]Your Paladino implementation is fully functional![/bold]\n")
@@ -264,6 +277,7 @@ def main():
         console.print("\nCheck the output above for details.\n")
 
     return 0 if passed == total else 1
+
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -4,13 +4,15 @@ Handles in-memory graph projections and high-performance algorithms.
 """
 
 from loguru import logger
+
 from paladino.db import Neo4jConnection
+
 
 class GDSManager:
     """
     Manages Neo4j GDS projections and algorithm execution.
     """
-    
+
     def __init__(self, conn: Neo4jConnection, graph_name: str = "paladino-analytics"):
         self.conn = conn
         self.graph_name = graph_name
@@ -18,10 +20,10 @@ class GDSManager:
     def project_graph(self):
         """Create an in-memory projection of the procurement network."""
         logger.info(f"Creating GDS projection: {self.graph_name}")
-        
+
         # Drop existing if any
         self.drop_graph()
-        
+
         query = """
         CALL gds.graph.project(
             $graph_name,
@@ -173,7 +175,7 @@ class GDSManager:
         proj_name = self.graph_name + "-supply"
 
         if not self.project_supply_chain_graph():
-            return 0   # No data — skip silently, warning already logged
+            return 0  # No data — skip silently, warning already logged
 
         try:
             result = self.conn.run_query(
@@ -256,7 +258,7 @@ class GDSManager:
         proj_name = self.graph_name + "-ownership"
 
         if not self.project_ownership_graph():
-            return 0   # No data — skip silently
+            return 0  # No data — skip silently
 
         try:
             result = self.conn.run_query(
@@ -329,8 +331,10 @@ class GDSManager:
             self.run_weakly_connected_components()
             logger.success("Procurement GDS algorithms completed.")
         except Exception as e:
-            logger.error(f"Procurement GDS pipeline failed: {e}. "
-                         "Ensure the GDS library is installed in Neo4j.")
+            logger.error(
+                f"Procurement GDS pipeline failed: {e}. "
+                "Ensure the GDS library is installed in Neo4j."
+            )
         finally:
             self.drop_graph()
 

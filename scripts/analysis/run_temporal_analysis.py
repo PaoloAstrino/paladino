@@ -28,9 +28,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import List, Dict, Optional
 
-from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -39,16 +37,17 @@ from rich.table import Table
 # Bootstrap
 # ──────────────────────────────────────────────────────────────────────
 try:
-    from paladino.db import Neo4jConnection
-    from paladino.config import get_settings
     from paladino.analytics.temporal_analytics import TemporalAnalyzer
+    from paladino.config import get_settings
+    from paladino.db import Neo4jConnection
     from scripts.analysis.migrate_date_types import run_migration
 except ImportError:
     import pathlib
+
     sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
-    from paladino.db import Neo4jConnection
-    from paladino.config import get_settings
     from paladino.analytics.temporal_analytics import TemporalAnalyzer
+    from paladino.config import get_settings
+    from paladino.db import Neo4jConnection
     from scripts.analysis.migrate_date_types import run_migration
 
 _console = Console()
@@ -60,17 +59,18 @@ VALID_STEPS = ("all", "migrate", "trends", "spikes", "seasonal", "sector", "hist
 # Display helpers
 # ──────────────────────────────────────────────────────────────────────
 
-def _fmt_value(v: Optional[float]) -> str:
+
+def _fmt_value(v: float | None) -> str:
     if v is None:
         return "—"
     if v >= 1_000_000:
-        return f"€{v/1_000_000:.1f}M"
+        return f"€{v / 1_000_000:.1f}M"
     if v >= 1_000:
-        return f"€{v/1_000:.1f}K"
+        return f"€{v / 1_000:.1f}K"
     return f"€{v:.0f}"
 
 
-def _print_trends(rows: List[Dict], company_id: Optional[str]) -> None:
+def _print_trends(rows: list[dict], company_id: str | None) -> None:
     title = f"Tender Volume Trend — {company_id}" if company_id else "Tender Volume Trend (Graph)"
     t = Table(title=title, show_header=True, header_style="bold cyan")
     if not company_id:
@@ -97,7 +97,7 @@ def _print_trends(rows: List[Dict], company_id: Optional[str]) -> None:
     _console.print(t)
 
 
-def _print_single_bidder(rows: List[Dict]) -> None:
+def _print_single_bidder(rows: list[dict]) -> None:
     t = Table(title="Single-Bidder Ratio Trend", show_header=True, header_style="bold cyan")
     t.add_column("Company")
     t.add_column("Year")
@@ -119,7 +119,7 @@ def _print_single_bidder(rows: List[Dict]) -> None:
     _console.print(t)
 
 
-def _print_spikes(rows: List[Dict], metric: str) -> None:
+def _print_spikes(rows: list[dict], metric: str) -> None:
     t = Table(
         title=f"Sudden Spikes — {metric}",
         show_header=True,
@@ -136,16 +136,18 @@ def _print_spikes(rows: List[Dict], metric: str) -> None:
         t.add_row(
             r.get("company_name") or r.get("company_id", "?"),
             latest_qtr,
-            _fmt_value(r.get("latest_value")) if metric == "total_value"
-                else str(int(r.get("latest_value", 0))),
-            _fmt_value(r.get("prior_mean")) if metric == "total_value"
-                else str(round(r.get("prior_mean", 0), 1)),
+            _fmt_value(r.get("latest_value"))
+            if metric == "total_value"
+            else str(int(r.get("latest_value", 0))),
+            _fmt_value(r.get("prior_mean"))
+            if metric == "total_value"
+            else str(round(r.get("prior_mean", 0), 1)),
             f"[bold red]{ratio:.2f}×[/bold red]",
         )
     _console.print(t)
 
 
-def _print_seasonal(rows: List[Dict]) -> None:
+def _print_seasonal(rows: list[dict]) -> None:
     t = Table(title="Seasonal Procurement Pattern", show_header=True, header_style="bold cyan")
     t.add_column("Month")
     t.add_column("Tenders", justify="right")
@@ -164,7 +166,7 @@ def _print_seasonal(rows: List[Dict]) -> None:
     _console.print(t)
 
 
-def _print_sector(rows: List[Dict], ateco_prefix: str) -> None:
+def _print_sector(rows: list[dict], ateco_prefix: str) -> None:
     t = Table(
         title=f"Sector Spending Volatility — ATECO {ateco_prefix}",
         show_header=True,
@@ -186,7 +188,7 @@ def _print_sector(rows: List[Dict], ateco_prefix: str) -> None:
     _console.print(t)
 
 
-def _print_history(rows: List[Dict], company_id: str) -> None:
+def _print_history(rows: list[dict], company_id: str) -> None:
     if not rows:
         _console.print(
             Panel(
@@ -221,6 +223,7 @@ def _print_history(rows: List[Dict], company_id: str) -> None:
 # Step runners
 # ──────────────────────────────────────────────────────────────────────
 
+
 def step_migrate(conn: Neo4jConnection, dry_run: bool) -> None:
     _console.rule("[bold]Step: Date Migration[/bold]")
     run_migration(conn, dry_run=dry_run)
@@ -228,7 +231,7 @@ def step_migrate(conn: Neo4jConnection, dry_run: bool) -> None:
 
 def step_trends(
     ta: TemporalAnalyzer,
-    company_id: Optional[str],
+    company_id: str | None,
     quarters: int,
 ) -> None:
     _console.rule("[bold]Step: Tender Volume Trends[/bold]")
@@ -279,6 +282,7 @@ def step_history(ta: TemporalAnalyzer, company_id: str) -> None:
 # ──────────────────────────────────────────────────────────────────────
 # Main
 # ──────────────────────────────────────────────────────────────────────
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -341,7 +345,9 @@ def main() -> None:
 
         if step in ("all", "trends"):
             if step == "trends" and not args.company:
-                _console.print("[yellow]Tip:[/yellow] Pass [bold]--company CF[/bold] to scope trends to one winner.")
+                _console.print(
+                    "[yellow]Tip:[/yellow] Pass [bold]--company CF[/bold] to scope trends to one winner."
+                )
             step_trends(ta, company_id=args.company, quarters=args.quarters)
 
         if step in ("all", "spikes"):
@@ -352,7 +358,9 @@ def main() -> None:
 
         if step in ("all", "sector"):
             if step == "all" and not args.sector:
-                _console.print("[dim]Skipping sector step in 'all' mode — pass --sector ATECO to include it.[/dim]")
+                _console.print(
+                    "[dim]Skipping sector step in 'all' mode — pass --sector ATECO to include it.[/dim]"
+                )
             elif args.sector:
                 step_sector(ta, ateco_prefix=args.sector, quarters=args.quarters)
 

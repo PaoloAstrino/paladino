@@ -2,36 +2,35 @@
 LLM Manager - Wrapper for local Ollama API.
 """
 
-import requests
 import json
 import re
 import time
-from typing import Dict, Any, Optional
+from typing import Any
+
+import requests
 from loguru import logger
+
 from paladino.config import settings
 from paladino.errors import (
+    LLMError,
+    llm_bad_response_error,
     llm_offline_error,
     llm_rate_limit_error,
-    llm_bad_response_error,
-    LLMError,
 )
 
 
 class LLMManager:
     """Manages interactions with Ollama or OpenAI-compatible APIs."""
-    
+
     def __init__(
-        self, 
-        model: Optional[str] = None, 
-        base_url: Optional[str] = None,
-        api_key: Optional[str] = None
+        self, model: str | None = None, base_url: str | None = None, api_key: str | None = None
     ):
         """
         Initialize LLM manager.
         """
         self.model = model or settings.llm_model
         self.api_key = api_key or settings.llm_api_key
-        
+
         # Determine base URL and endpoint
         raw_url = base_url or settings.llm_api_base or settings.ollama_base_url
         if self.api_key:
@@ -40,16 +39,16 @@ class LLMManager:
         else:
             # Local Ollama
             self.base_url = f"{raw_url.rstrip('/')}/api/chat"
-    
-    def chat(self, messages: list, format: Optional[str] = None, _retry: int = 3) -> str:
+
+    def chat(self, messages: list, format: str | None = None, _retry: int = 3) -> str:
         """
         Send a chat request to the LLM (Ollama or API).
-        
+
         Args:
             messages: List of message dictionaries with 'role' and 'content'
             format: Response format ('json' for structured output)
             _retry: Internal retry counter for rate-limit backoff (do not set manually)
-            
+
         Returns:
             Response text from the LLM
 
@@ -59,12 +58,8 @@ class LLMManager:
             LLMBadResponseError: If the response body cannot be parsed.
             LLMError: For any other LLM-side failure.
         """
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "stream": False
-        }
-        
+        payload = {"model": self.model, "messages": messages, "stream": False}
+
         headers = {}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -73,21 +68,18 @@ class LLMManager:
         else:
             if format == "json":
                 payload["format"] = "json"
-            
+
         try:
-            response = requests.post(
-                self.base_url, 
-                json=payload, 
-                headers=headers,
-                timeout=180
-            )
+            response = requests.post(self.base_url, json=payload, headers=headers, timeout=180)
 
             # ── rate limit: exponential backoff up to _retry times ──────────
             if response.status_code == 429:
                 retry_after = int(response.headers.get("Retry-After", 0))
                 if _retry > 0:
                     wait = retry_after or (2 ** (3 - _retry) * 2)
-                    logger.warning(f"LLM rate-limited (429). Retrying in {wait}s ({_retry} attempts left)…")
+                    logger.warning(
+                        f"LLM rate-limited (429). Retrying in {wait}s ({_retry} attempts left)…"
+                    )
                     time.sleep(wait)
                     return self.chat(messages, format=format, _retry=_retry - 1)
                 raise llm_rate_limit_error(retry_after=retry_after)
@@ -99,7 +91,7 @@ class LLMManager:
                 data = response.json()
             except (ValueError, json.JSONDecodeError) as parse_err:
                 raise llm_bad_response_error(raw=response.text) from parse_err
-            
+
             # Navigate different response structures
             if "choices" in data:
                 content = data["choices"][0]["message"]["content"]
@@ -110,12 +102,12 @@ class LLMManager:
                 raise llm_bad_response_error(raw=str(data))
 
             return content
-            
+
         except requests.exceptions.ConnectionError as e:
             raise llm_offline_error(url=self.base_url, original=e) from e
         except requests.exceptions.Timeout as e:
             raise LLMError(
-                message=f"⏱️  LLM request timed out after 180 s.",
+                message="⏱️  LLM request timed out after 180 s.",
                 hint="The model may be loading or the prompt is very long. Try again.",
             ) from e
         except LLMError:
@@ -127,7 +119,7 @@ class LLMManager:
             logger.error(f"Unexpected error in LLM chat: {e}")
             raise
 
-    def classify_intent(self, question: str, available_templates: list) -> Dict[str, Any]:
+    def classify_intent(self, question: str, available_templates: list) -> dict[str, Any]:
         """
         Classify natural language question into a Cypher template.
 
@@ -148,22 +140,24 @@ class LLMManager:
             "Return ONLY a valid JSON object with exactly these keys: "
             "'template_name' (string or null), 'params' (object - must be a dict/object, not string or null), "
             "'confidence' (float 0.0-1.0 — how confident you are this template fits the question). "
-            "Example: {\"template_name\": null, \"params\": {}, \"confidence\": 0.3} "
+            'Example: {"template_name": null, "params": {}, "confidence": 0.3} '
             "Set confidence below 0.7 and template_name to null for unclear questions. "
             "NEVER wrap the JSON in markdown code blocks or any other formatting."
         )
-        
+
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": question}
+            {"role": "user", "content": question},
         ]
-        
+
         response_text = self.chat(messages, format="json")
-        
+
         try:
             parsed = json.loads(response_text)
         except json.JSONDecodeError:
-            logger.warning(f"classify_intent: LLM response is not valid JSON: {response_text[:200]}")
+            logger.warning(
+                f"classify_intent: LLM response is not valid JSON: {response_text[:200]}"
+            )
             return {"template_name": None, "params": {}}
 
         # Validate expected structure
@@ -177,12 +171,16 @@ class LLMManager:
 
         # Ensure params is always a dict
         if not isinstance(params, dict):
-            logger.warning(f"classify_intent: 'params' is {type(params).__name__}, converting to dict")
+            logger.warning(
+                f"classify_intent: 'params' is {type(params).__name__}, converting to dict"
+            )
             params = {}
 
         # Reject low-confidence matches — let dynamic Cypher generation handle them.
         CONFIDENCE_THRESHOLD = 0.7
-        if template_name and (not isinstance(confidence, (int, float)) or confidence < CONFIDENCE_THRESHOLD):
+        if template_name and (
+            not isinstance(confidence, (int, float)) or confidence < CONFIDENCE_THRESHOLD
+        ):
             logger.info(
                 f"classify_intent: template '{template_name}' rejected "
                 f"(confidence={confidence} < {CONFIDENCE_THRESHOLD})"
@@ -191,17 +189,17 @@ class LLMManager:
 
         return {"template_name": template_name, "params": params}
 
-    def generate_cypher(self, question: str, schema_metadata: str) -> Optional[str]:
+    def generate_cypher(self, question: str, schema_metadata: str) -> str | None:
         """
         Generate a Cypher query from natural language using schema context.
 
         Security: Only READ-ONLY queries are allowed. Write operations are blocked.
         Uses regex with word boundaries to prevent obfuscation bypasses.
-        
+
         Args:
             question: Natural language question from user
             schema_metadata: Database schema description for context
-            
+
         Returns:
             Validated Cypher query string, or None if security check fails
         """
@@ -216,7 +214,7 @@ class LLMManager:
 
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": question}
+            {"role": "user", "content": question},
         ]
 
         cypher = self.chat(messages).strip()
@@ -224,7 +222,7 @@ class LLMManager:
         # Delegate to the shared security gate
         return self._cypher_security_check(cypher, logger)
 
-    def fix_cypher(self, failed_query: str, error: str, schema_metadata: str) -> Optional[str]:
+    def fix_cypher(self, failed_query: str, error: str, schema_metadata: str) -> str | None:
         """Generate a corrected Cypher query based on a failure message.
 
         The fixed query is passed through the same security checks as ``generate_cypher``.
@@ -235,52 +233,52 @@ class LLMManager:
             "Return ONLY the Cypher query string, no explanation.\n"
             f"Schema:\n{schema_metadata}"
         )
-        
+
         user_msg = (
             f"Failed Query: {failed_query}\n"
             f"Error Message: {error}\n"
             "Please provide the corrected Cypher query."
         )
-        
+
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_msg}
+            {"role": "user", "content": user_msg},
         ]
-        
+
         fixed = self.chat(messages).strip()
         # Re-run the same security gate so a jailbroken model cannot sneak in writes
         return self._cypher_security_check(fixed, logger)
 
     # ── internal shared security check callable ──────────────────────────────
     @staticmethod
-    def _cypher_security_check(cypher: str, log) -> Optional[str]:
+    def _cypher_security_check(cypher: str, log) -> str | None:
         """Return the cypher if it passes all write-op checks, else None."""
         # Strip markdown code block wrapping if present (LLMs may wrap in ```)
         cypher = cypher.strip()
-        if cypher.startswith('```'):
+        if cypher.startswith("```"):
             # Remove opening ``` (and optional language specifier like ```cypher)
-            cypher = re.sub(r'^\s*```(?:cypher)?\s*\n?', '', cypher, flags=re.MULTILINE)
+            cypher = re.sub(r"^\s*```(?:cypher)?\s*\n?", "", cypher, flags=re.MULTILINE)
             # Remove closing ```
-            cypher = re.sub(r'\n?\s*```\s*$', '', cypher)
+            cypher = re.sub(r"\n?\s*```\s*$", "", cypher)
             cypher = cypher.strip()
-        
+
         forbidden_patterns = [
-            (r'\bDELETE\b', 'DELETE operation'),
-            (r'\bDETACH\b', 'DETACH operation'),
-            (r'\bREMOVE\b', 'REMOVE operation'),
-            (r'\bDROP\b', 'DROP operation'),
-            (r'\bCREATE\b', 'CREATE operation'),
-            (r'\bMERGE\b', 'MERGE operation'),
-            (r'\bSET\b', 'SET operation'),
-            (r'\bapoc\.do\.write\b', 'APOC write procedure'),
-            (r'\bapoc\.create\b', 'APOC create procedure'),
-            (r'\bapoc\.merge\b', 'APOC merge procedure'),
-            (r'\bapoc\.set\b', 'APOC set procedure'),
-            (r'\bapoc\.delete\b', 'APOC delete procedure'),
-            (r'\bCREATE\s+CONSTRAINT\b', 'CREATE CONSTRAINT'),
-            (r'\bDROP\s+CONSTRAINT\b', 'DROP CONSTRAINT'),
-            (r'\bCREATE\s+INDEX\b', 'CREATE INDEX'),
-            (r'\bDROP\s+INDEX\b', 'DROP INDEX'),
+            (r"\bDELETE\b", "DELETE operation"),
+            (r"\bDETACH\b", "DETACH operation"),
+            (r"\bREMOVE\b", "REMOVE operation"),
+            (r"\bDROP\b", "DROP operation"),
+            (r"\bCREATE\b", "CREATE operation"),
+            (r"\bMERGE\b", "MERGE operation"),
+            (r"\bSET\b", "SET operation"),
+            (r"\bapoc\.do\.write\b", "APOC write procedure"),
+            (r"\bapoc\.create\b", "APOC create procedure"),
+            (r"\bapoc\.merge\b", "APOC merge procedure"),
+            (r"\bapoc\.set\b", "APOC set procedure"),
+            (r"\bapoc\.delete\b", "APOC delete procedure"),
+            (r"\bCREATE\s+CONSTRAINT\b", "CREATE CONSTRAINT"),
+            (r"\bDROP\s+CONSTRAINT\b", "DROP CONSTRAINT"),
+            (r"\bCREATE\s+INDEX\b", "CREATE INDEX"),
+            (r"\bDROP\s+INDEX\b", "DROP INDEX"),
         ]
         for pattern, description in forbidden_patterns:
             if re.search(pattern, cypher, re.IGNORECASE):

@@ -59,21 +59,20 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from loguru import logger
 
 from paladino.db import Neo4jConnection
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Risk-tier thresholds
 # ─────────────────────────────────────────────────────────────────────────────
 
-_TIER_HIGH     = 0.70
-_TIER_MEDIUM   = 0.40
-_TIER_LOW      = 0.0
+_TIER_HIGH = 0.70
+_TIER_MEDIUM = 0.40
+_TIER_LOW = 0.0
 
 
 def _risk_tier(score: float) -> str:
@@ -88,26 +87,29 @@ def _risk_tier(score: float) -> str:
 # Data-classes
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class FactorExplanation:
     """One scoring signal contributing to the overall risk score."""
-    factor:       str          # machine key, e.g. "single_bidder_ratio"
-    label:        str          # human label, e.g. "Single-bidder win rate"
-    value:        float        # raw measured value
-    weight:       float        # relative weight in the scoring formula
-    contribution: float        # weight × normalised_value
-    sentence:     str          # 1-sentence plain-English narrative
-    sources:      List[str] = field(default_factory=list)  # ["Tender:T001", …]
+
+    factor: str  # machine key, e.g. "single_bidder_ratio"
+    label: str  # human label, e.g. "Single-bidder win rate"
+    value: float  # raw measured value
+    weight: float  # relative weight in the scoring formula
+    contribution: float  # weight × normalised_value
+    sentence: str  # 1-sentence plain-English narrative
+    sources: list[str] = field(default_factory=list)  # ["Tender:T001", …]
 
 
 @dataclass
 class EvidenceLink:
     """A single citation linking a claim to a source graph node."""
-    claim:        str
-    source_label: str          # Neo4j label: "Tender", "Buyer", "FraudPattern"
-    source_id:    str
-    source_name:  Optional[str] = None
-    url:          Optional[str] = None
+
+    claim: str
+    source_label: str  # Neo4j label: "Tender", "Buyer", "FraudPattern"
+    source_id: str
+    source_name: str | None = None
+    url: str | None = None
 
 
 @dataclass
@@ -118,57 +120,56 @@ class ExplanationResult:
     All fields are plain Python (no Neo4j types) so the object is directly
     JSON-serialisable.
     """
-    company_id:     str
-    company_name:   str
-    risk_score:     float
-    risk_tier:      str
-    summary:        str
-    factors:        List[FactorExplanation]        = field(default_factory=list)
-    fraud_patterns: List[Dict[str, Any]]           = field(default_factory=list)
-    shell_risk:     Optional[Dict[str, Any]]       = None
-    trend:          str                            = "STABLE"   # WORSENING|STABLE|IMPROVING
-    risk_history:   List[Dict[str, Any]]           = field(default_factory=list)
-    evidence_chain: List[EvidenceLink]             = field(default_factory=list)
-    generated_at:   str                            = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+
+    company_id: str
+    company_name: str
+    risk_score: float
+    risk_tier: str
+    summary: str
+    factors: list[FactorExplanation] = field(default_factory=list)
+    fraud_patterns: list[dict[str, Any]] = field(default_factory=list)
+    shell_risk: dict[str, Any] | None = None
+    trend: str = "STABLE"  # WORSENING|STABLE|IMPROVING
+    risk_history: list[dict[str, Any]] = field(default_factory=list)
+    evidence_chain: list[EvidenceLink] = field(default_factory=list)
+    generated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     # ── serialisation ──────────────────────────────────────────────────────
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> dict[str, Any]:
         return {
-            "company_id":     self.company_id,
-            "company_name":   self.company_name,
-            "risk_score":     round(self.risk_score, 4),
-            "risk_tier":      self.risk_tier,
-            "summary":        self.summary,
+            "company_id": self.company_id,
+            "company_name": self.company_name,
+            "risk_score": round(self.risk_score, 4),
+            "risk_tier": self.risk_tier,
+            "summary": self.summary,
             "factors": [
                 {
-                    "factor":       f.factor,
-                    "label":        f.label,
-                    "value":        round(f.value, 4),
-                    "weight":       f.weight,
+                    "factor": f.factor,
+                    "label": f.label,
+                    "value": round(f.value, 4),
+                    "weight": f.weight,
                     "contribution": round(f.contribution, 4),
-                    "sentence":     f.sentence,
-                    "sources":      f.sources,
+                    "sentence": f.sentence,
+                    "sources": f.sources,
                 }
                 for f in self.factors
             ],
             "fraud_patterns": self.fraud_patterns,
-            "shell_risk":     self.shell_risk,
-            "trend":          self.trend,
-            "risk_history":   self.risk_history,
+            "shell_risk": self.shell_risk,
+            "trend": self.trend,
+            "risk_history": self.risk_history,
             "evidence_chain": [
                 {
-                    "claim":        e.claim,
+                    "claim": e.claim,
                     "source_label": e.source_label,
-                    "source_id":    e.source_id,
-                    "source_name":  e.source_name,
-                    "url":          e.url,
+                    "source_id": e.source_id,
+                    "source_name": e.source_name,
+                    "url": e.url,
                 }
                 for e in self.evidence_chain
             ],
-            "generated_at":   self.generated_at,
+            "generated_at": self.generated_at,
         }
 
     def render(self, format: str = "json") -> str:
@@ -185,6 +186,7 @@ class ExplanationResult:
 # ─────────────────────────────────────────────────────────────────────────────
 # Main explainer
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class AnomalyExplainer:
     """
@@ -233,18 +235,16 @@ class AnomalyExplainer:
 
         # Resolve actual id (may have been passed cf)
         resolved_id = info.get("company_id") or company_id
-        risk_score  = float(info.get("risk_score") or 0.0)
-        name        = info.get("company_name") or company_id
+        risk_score = float(info.get("risk_score") or 0.0)
+        name = info.get("company_name") or company_id
 
         # Collect all signals
-        factors         = self._explain_risk_factors(resolved_id, risk_score)
-        fraud_patterns  = self._get_fraud_patterns(resolved_id)
-        shell_risk      = self._get_shell_risk(resolved_id) if self.include_shell_risk else None
-        risk_history    = self._get_risk_history(resolved_id)
-        trend           = self._compute_trend(risk_history, risk_score)
-        evidence_chain  = self._build_evidence_chain(
-            resolved_id, factors, fraud_patterns
-        )
+        factors = self._explain_risk_factors(resolved_id, risk_score)
+        fraud_patterns = self._get_fraud_patterns(resolved_id)
+        shell_risk = self._get_shell_risk(resolved_id) if self.include_shell_risk else None
+        risk_history = self._get_risk_history(resolved_id)
+        trend = self._compute_trend(risk_history, risk_score)
+        evidence_chain = self._build_evidence_chain(resolved_id, factors, fraud_patterns)
         summary = self._generate_summary(name, risk_score, factors, fraud_patterns)
 
         return ExplanationResult(
@@ -263,7 +263,7 @@ class AnomalyExplainer:
 
     # ── company info ─────────────────────────────────────────────────────────
 
-    def _get_company_info(self, company_id: str) -> Optional[Dict[str, Any]]:
+    def _get_company_info(self, company_id: str) -> dict[str, Any] | None:
         rows = self.conn.run_query(
             """
             MATCH (c:Company)
@@ -287,76 +287,85 @@ class AnomalyExplainer:
         self,
         company_id: str,
         risk_score: float,
-    ) -> List[FactorExplanation]:
+    ) -> list[FactorExplanation]:
         """
         Reconstruct the three scoring signals from RiskEngine and compute
         their individual contributions to the overall score.
         """
-        factors: List[FactorExplanation] = []
+        factors: list[FactorExplanation] = []
 
         # 1. Single-bidder ratio
         sbr = self._query_single_bidder(company_id)
         if sbr is not None:
-            ratio    = sbr["ratio"]
-            total    = sbr["total_wins"]
-            sb_wins  = sbr["single_bidder_wins"]
-            contrib  = round(ratio * 0.40, 4)
+            ratio = sbr["ratio"]
+            total = sbr["total_wins"]
+            sb_wins = sbr["single_bidder_wins"]
+            contrib = round(ratio * 0.40, 4)
             sentence = (
                 f"Won {ratio:.0%} of its {total} tender(s) without competition "
                 f"({sb_wins} single-bidder award{'s' if sb_wins != 1 else ''})."
                 if ratio > 0
                 else f"All {total} tender win(s) had at least one competing bidder."
             )
-            factors.append(FactorExplanation(
-                factor="single_bidder_ratio",
-                label="Single-bidder win rate",
-                value=ratio,
-                weight=0.40,
-                contribution=contrib,
-                sentence=sentence,
-                sources=[f"Tender:{tid}" for tid in sbr.get("sample_tender_ids", [])],
-            ))
+            factors.append(
+                FactorExplanation(
+                    factor="single_bidder_ratio",
+                    label="Single-bidder win rate",
+                    value=ratio,
+                    weight=0.40,
+                    contribution=contrib,
+                    sentence=sentence,
+                    sources=[f"Tender:{tid}" for tid in sbr.get("sample_tender_ids", [])],
+                )
+            )
 
         # 2. Market dominance (PageRank centrality)
         centrality = self._query_centrality(company_id)
         if centrality is not None:
-            raw      = centrality["centrality_score"]
-            contrib  = round(raw * 0.30, 4)
+            raw = centrality["centrality_score"]
+            contrib = round(raw * 0.30, 4)
             sentence = (
                 f"PageRank centrality = {raw:.2f} "
                 f"({'above' if raw >= 0.50 else 'below'} the 0.50 market-dominance threshold). "
-                + ("Indicates a hub-like position in the procurement network." if raw >= 0.50
-                   else "No unusual centrality detected.")
+                + (
+                    "Indicates a hub-like position in the procurement network."
+                    if raw >= 0.50
+                    else "No unusual centrality detected."
+                )
             )
-            factors.append(FactorExplanation(
-                factor="market_dominance",
-                label="Market dominance (PageRank)",
-                value=raw,
-                weight=0.30,
-                contribution=contrib,
-                sentence=sentence,
-            ))
+            factors.append(
+                FactorExplanation(
+                    factor="market_dominance",
+                    label="Market dominance (PageRank)",
+                    value=raw,
+                    weight=0.30,
+                    contribution=contrib,
+                    sentence=sentence,
+                )
+            )
 
         # 3. Buyer concentration
         bc = self._query_buyer_concentration(company_id)
         if bc is not None:
-            ratio    = bc["concentration_ratio"]
-            buyer    = bc.get("top_buyer_name") or "unknown buyer"
-            contrib  = round(min(ratio, 1.0) * 0.30, 4)
-            sentence = (
-                f"{ratio:.0%} of wins came from a single buyer ({buyer}). "
-                + ("Suggests dependency or preferential treatment." if ratio >= 0.80
-                   else "Buyer concentration within normal range.")
+            ratio = bc["concentration_ratio"]
+            buyer = bc.get("top_buyer_name") or "unknown buyer"
+            contrib = round(min(ratio, 1.0) * 0.30, 4)
+            sentence = f"{ratio:.0%} of wins came from a single buyer ({buyer}). " + (
+                "Suggests dependency or preferential treatment."
+                if ratio >= 0.80
+                else "Buyer concentration within normal range."
             )
-            factors.append(FactorExplanation(
-                factor="buyer_concentration",
-                label="Buyer concentration",
-                value=ratio,
-                weight=0.30,
-                contribution=contrib,
-                sentence=sentence,
-                sources=[f"Buyer:{bc.get('top_buyer_id')}"] if bc.get("top_buyer_id") else [],
-            ))
+            factors.append(
+                FactorExplanation(
+                    factor="buyer_concentration",
+                    label="Buyer concentration",
+                    value=ratio,
+                    weight=0.30,
+                    contribution=contrib,
+                    sentence=sentence,
+                    sources=[f"Buyer:{bc.get('top_buyer_id')}"] if bc.get("top_buyer_id") else [],
+                )
+            )
 
         # Sort by contribution descending (most impactful first)
         factors.sort(key=lambda f: f.contribution, reverse=True)
@@ -364,7 +373,7 @@ class AnomalyExplainer:
 
     # ── graph queries for each factor ─────────────────────────────────────────
 
-    def _query_single_bidder(self, company_id: str) -> Optional[Dict[str, Any]]:
+    def _query_single_bidder(self, company_id: str) -> dict[str, Any] | None:
         rows = self.conn.run_query(
             """
             MATCH (c:Company {id: $cid})-[:WINS]->(t:Tender)
@@ -382,7 +391,7 @@ class AnomalyExplainer:
         )
         return dict(rows[0]) if rows else None
 
-    def _query_centrality(self, company_id: str) -> Optional[Dict[str, Any]]:
+    def _query_centrality(self, company_id: str) -> dict[str, Any] | None:
         rows = self.conn.run_query(
             """
             MATCH (c:Company {id: $cid})
@@ -392,7 +401,7 @@ class AnomalyExplainer:
         )
         return dict(rows[0]) if rows else None
 
-    def _query_buyer_concentration(self, company_id: str) -> Optional[Dict[str, Any]]:
+    def _query_buyer_concentration(self, company_id: str) -> dict[str, Any] | None:
         rows = self.conn.run_query(
             """
             MATCH (c:Company {id: $cid})-[:WINS]->(t:Tender)<-[:ISSUES]-(b:Buyer)
@@ -414,7 +423,7 @@ class AnomalyExplainer:
 
     # ── fraud patterns ────────────────────────────────────────────────────────
 
-    def _get_fraud_patterns(self, company_id: str) -> List[Dict[str, Any]]:
+    def _get_fraud_patterns(self, company_id: str) -> list[dict[str, Any]]:
         rows = self.conn.run_query(
             """
             MATCH (c:Company {id: $cid})-[r:FLAGGED_BY]->(f:FraudPattern)
@@ -434,7 +443,7 @@ class AnomalyExplainer:
 
     # ── shell risk ────────────────────────────────────────────────────────────
 
-    def _get_shell_risk(self, company_id: str) -> Optional[Dict[str, Any]]:
+    def _get_shell_risk(self, company_id: str) -> dict[str, Any] | None:
         """
         Try the cached ShellRiskScore node first; fall back to live scoring.
         """
@@ -461,8 +470,9 @@ class AnomalyExplainer:
         # Fall back to live computation
         try:
             from paladino.analytics.shell_company_detector import ShellCompanyDetector
+
             detector = ShellCompanyDetector(self.conn.driver)
-            result   = detector.score_single(company_id)
+            result = detector.score_single(company_id)
             if result:
                 return result.as_dict()
         except Exception as exc:  # noqa: BLE001
@@ -471,7 +481,7 @@ class AnomalyExplainer:
 
     # ── risk history & trend ──────────────────────────────────────────────────
 
-    def _get_risk_history(self, company_id: str) -> List[Dict[str, Any]]:
+    def _get_risk_history(self, company_id: str) -> list[dict[str, Any]]:
         rows = self.conn.run_query(
             """
             MATCH (c:Company {id: $cid})-[:HAS_VERSION]->(v:Version)
@@ -488,7 +498,7 @@ class AnomalyExplainer:
 
     def _compute_trend(
         self,
-        history: List[Dict[str, Any]],
+        history: list[dict[str, Any]],
         current_score: float,
     ) -> str:
         """
@@ -514,32 +524,36 @@ class AnomalyExplainer:
     def _build_evidence_chain(
         self,
         company_id: str,
-        factors:        List[FactorExplanation],
-        fraud_patterns: List[Dict[str, Any]],
-    ) -> List[EvidenceLink]:
+        factors: list[FactorExplanation],
+        fraud_patterns: list[dict[str, Any]],
+    ) -> list[EvidenceLink]:
         """
         Build a list of evidence links tracing each claim to a graph node.
         """
-        chain: List[EvidenceLink] = []
+        chain: list[EvidenceLink] = []
 
         for f in factors:
             for src in f.sources:
                 parts = src.split(":", 1)
                 label = parts[0] if len(parts) == 2 else "Unknown"
-                sid   = parts[1] if len(parts) == 2 else src
-                chain.append(EvidenceLink(
-                    claim=f.sentence,
-                    source_label=label,
-                    source_id=sid,
-                ))
+                sid = parts[1] if len(parts) == 2 else src
+                chain.append(
+                    EvidenceLink(
+                        claim=f.sentence,
+                        source_label=label,
+                        source_id=sid,
+                    )
+                )
 
         for fp in fraud_patterns:
-            chain.append(EvidenceLink(
-                claim=fp.get("description") or fp.get("pattern_name") or "Fraud pattern",
-                source_label="FraudPattern",
-                source_id=fp.get("pattern_id") or "",
-                source_name=fp.get("pattern_name"),
-            ))
+            chain.append(
+                EvidenceLink(
+                    claim=fp.get("description") or fp.get("pattern_name") or "Fraud pattern",
+                    source_label="FraudPattern",
+                    source_id=fp.get("pattern_id") or "",
+                    source_name=fp.get("pattern_name"),
+                )
+            )
 
         return chain
 
@@ -547,10 +561,10 @@ class AnomalyExplainer:
 
     def _generate_summary(
         self,
-        name:           str,
-        risk_score:     float,
-        factors:        List[FactorExplanation],
-        fraud_patterns: List[Dict[str, Any]],
+        name: str,
+        risk_score: float,
+        factors: list[FactorExplanation],
+        fraud_patterns: list[dict[str, Any]],
     ) -> str:
         """
         Auto-generate the headline summary sentence.
@@ -564,7 +578,7 @@ class AnomalyExplainer:
                 "No specific contributing factors were identified."
             )
 
-        parts: List[str] = []
+        parts: list[str] = []
         for i, f in enumerate(factors[:3], start=1):
             if f.factor == "single_bidder_ratio":
                 parts.append(f"({i}) {f.value:.0%} single-bidder wins")
@@ -577,19 +591,17 @@ class AnomalyExplainer:
 
         if fraud_patterns and len(parts) < 3:
             pat_names = [p.get("pattern_name", "unknown") for p in fraud_patterns[:2]]
-            parts.append(f"({len(parts)+1}) fraud patterns: {', '.join(pat_names)}")
+            parts.append(f"({len(parts) + 1}) fraud patterns: {', '.join(pat_names)}")
 
         if parts:
-            return (
-                f"This company scored {risk_score:.2f} because: "
-                + ", ".join(parts) + "."
-            )
+            return f"This company scored {risk_score:.2f} because: " + ", ".join(parts) + "."
         return f"{name} has a risk score of {risk_score:.2f}."
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Markdown and text renderers
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _render_markdown(r: ExplanationResult) -> str:
     tier_badge = {"HIGH": "🔴", "MEDIUM": "🟡", "LOW": "🟢"}.get(r.risk_tier, "⚪")
@@ -619,8 +631,7 @@ def _render_markdown(r: ExplanationResult) -> str:
         for f in r.factors:
             bar = "█" * int(f.contribution * 20)
             lines.append(
-                f"| **{f.label}** | {f.value:.2%} | {f.weight:.0%} | "
-                f"{f.contribution:.3f} {bar} |"
+                f"| **{f.label}** | {f.value:.2%} | {f.weight:.0%} | {f.contribution:.3f} {bar} |"
             )
         lines.append("")
         for f in r.factors:
@@ -631,9 +642,9 @@ def _render_markdown(r: ExplanationResult) -> str:
     lines += ["---", "", "## Fraud Pattern Alerts", ""]
     if r.fraud_patterns:
         for fp in r.fraud_patterns:
-            sev   = (fp.get("severity") or "?").upper()
+            sev = (fp.get("severity") or "?").upper()
             icons = {"CRITICAL": "🚨", "HIGH": "🔴", "MEDIUM": "🟡", "LOW": "⚪"}
-            icon  = icons.get(sev, "⚪")
+            icon = icons.get(sev, "⚪")
             lines.append(
                 f"- {icon} **[{sev}]** `{fp.get('pattern_name')}` "
                 f"(confidence {float(fp.get('confidence') or 0):.0%})"
@@ -646,20 +657,30 @@ def _render_markdown(r: ExplanationResult) -> str:
     if r.shell_risk:
         sr = r.shell_risk
         lines += [
-            "", "---", "", "## Shell Company Risk", "",
+            "",
+            "---",
+            "",
+            "## Shell Company Risk",
+            "",
             f"**Shell Score:** {float(sr.get('shell_score') or 0):.2%}  ",
             f"**Tier:** {sr.get('risk_tier', 'N/A')}  ",
         ]
 
     if r.risk_history:
-        lines += ["", "---", "", "## Risk Score History", "",
-                  "| Date | Score | Flags |",
-                  "|------|-------|-------|"]
+        lines += [
+            "",
+            "---",
+            "",
+            "## Risk Score History",
+            "",
+            "| Date | Score | Flags |",
+            "|------|-------|-------|",
+        ]
         for snap in r.risk_history:
             lines.append(
-                f"| {snap.get('change_date','')} | "
+                f"| {snap.get('change_date', '')} | "
                 f"{float(snap.get('risk_score') or 0):.2f} | "
-                f"{snap.get('anomaly_flags','')} |"
+                f"{snap.get('anomaly_flags', '')} |"
             )
 
     if r.evidence_chain:
@@ -683,15 +704,22 @@ def _render_text(r: ExplanationResult) -> str:
         "FACTORS:",
     ]
     for f in r.factors:
-        lines.append(f"  [{f.label}]  value={f.value:.2%}  weight={f.weight:.0%}  "
-                     f"contribution={f.contribution:.3f}")
+        lines.append(
+            f"  [{f.label}]  value={f.value:.2%}  weight={f.weight:.0%}  "
+            f"contribution={f.contribution:.3f}"
+        )
         lines.append(f"  → {f.sentence}")
     if r.fraud_patterns:
         lines += ["", "FRAUD PATTERNS:"]
         for fp in r.fraud_patterns:
-            lines.append(f"  [{fp.get('severity','?').upper()}] {fp.get('pattern_name')} — "
-                         f"{fp.get('description','')[:100]}")
+            lines.append(
+                f"  [{fp.get('severity', '?').upper()}] {fp.get('pattern_name')} — "
+                f"{fp.get('description', '')[:100]}"
+            )
     if r.shell_risk:
-        lines += ["", f"SHELL RISK: {float(r.shell_risk.get('shell_score') or 0):.2%} "
-                      f"[{r.shell_risk.get('risk_tier','?')}]"]
+        lines += [
+            "",
+            f"SHELL RISK: {float(r.shell_risk.get('shell_score') or 0):.2%} "
+            f"[{r.shell_risk.get('risk_tier', '?')}]",
+        ]
     return "\n".join(lines)

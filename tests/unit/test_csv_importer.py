@@ -8,10 +8,8 @@ no live graph connection is required.
 from __future__ import annotations
 
 import csv
-import io
-import textwrap
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -23,19 +21,19 @@ from paladino.etl.csv_importer import (
     _norm,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers — thin FakeDB and tmp CSV factory
 # ---------------------------------------------------------------------------
+
 
 class FakeDB:
     """Captures run_query calls without touching Neo4j."""
 
     def __init__(self) -> None:
-        self.calls: List[tuple[str, Dict[str, Any]]] = []
-        self.raise_on_next: Optional[Exception] = None
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.raise_on_next: Exception | None = None
 
-    def run_query(self, query: str, parameters: Optional[Dict] = None) -> List:
+    def run_query(self, query: str, parameters: dict | None = None) -> list:
         if self.raise_on_next:
             exc = self.raise_on_next
             self.raise_on_next = None
@@ -47,7 +45,7 @@ class FakeDB:
         pass
 
 
-def make_csv(tmp_path: Path, rows: List[Dict], filename: str = "test.csv") -> Path:
+def make_csv(tmp_path: Path, rows: list[dict], filename: str = "test.csv") -> Path:
     """Write *rows* to a CSV file return its Path."""
     p = tmp_path / filename
     if not rows:
@@ -70,6 +68,7 @@ def make_importer(db: FakeDB) -> CustomCSVImporter:
 # ---------------------------------------------------------------------------
 # _norm
 # ---------------------------------------------------------------------------
+
 
 class TestNorm:
     def test_lowercase(self):
@@ -94,6 +93,7 @@ class TestNorm:
 # ---------------------------------------------------------------------------
 # Column mapping
 # ---------------------------------------------------------------------------
+
 
 class TestBuildColumnMap:
     def setup_method(self):
@@ -141,6 +141,7 @@ class TestBuildColumnMap:
 # Auto-detect node type
 # ---------------------------------------------------------------------------
 
+
 class TestAutoDetectNodeType:
     def setup_method(self):
         self.imp = make_importer(FakeDB())
@@ -168,6 +169,7 @@ class TestAutoDetectNodeType:
 # ---------------------------------------------------------------------------
 # import_file — dry run
 # ---------------------------------------------------------------------------
+
 
 class TestImportFileDryRun:
     def test_dry_run_returns_no_db_calls(self, tmp_path):
@@ -214,6 +216,7 @@ class TestImportFileDryRun:
 # import_file — live (mocked DB)
 # ---------------------------------------------------------------------------
 
+
 class TestImportFileLive:
     def test_company_csv_triggers_company_merge(self, tmp_path):
         db = FakeDB()
@@ -230,7 +233,9 @@ class TestImportFileLive:
     def test_tender_csv_triggers_tender_merge(self, tmp_path):
         db = FakeDB()
         imp = make_importer(db)
-        path = make_csv(tmp_path, [{"cig": "ZZZ999", "oggetto": "Lavori stradali", "importo": "100000"}])
+        path = make_csv(
+            tmp_path, [{"cig": "ZZZ999", "oggetto": "Lavori stradali", "importo": "100000"}]
+        )
         result = imp.import_file(path)
         assert result.node_type_detected == "Tender"
         assert db.calls
@@ -308,6 +313,7 @@ class TestImportFileLive:
 # UniversalIngestor.import_csv integration
 # ---------------------------------------------------------------------------
 
+
 class TestUniversalIngestorImportCsv:
     def test_routes_unknown_csv_to_importer(self, tmp_path):
         from paladino.etl.universal_ingestor import UniversalIngestor
@@ -315,11 +321,16 @@ class TestUniversalIngestorImportCsv:
         path = make_csv(tmp_path, [{"cf": "12345678901", "nome": "ACME"}])
         ui = UniversalIngestor()
         db = FakeDB()
-        with patch("paladino.etl.csv_importer.CustomCSVImporter.__init__", return_value=None), \
-             patch("paladino.etl.csv_importer.CustomCSVImporter.import_file",
-                   return_value=ImportResult(rows_read=1, rows_merged=1)) as mock_import:
+        with (
+            patch("paladino.etl.csv_importer.CustomCSVImporter.__init__", return_value=None),
+            patch(
+                "paladino.etl.csv_importer.CustomCSVImporter.import_file",
+                return_value=ImportResult(rows_read=1, rows_merged=1),
+            ) as mock_import,
+        ):
             # Patch __init__ so no real Neo4j connection is made
             from paladino.etl import csv_importer as _mod
+
             _mod.CustomCSVImporter.db = db  # inject fake db
 
             try:

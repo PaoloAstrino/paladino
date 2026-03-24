@@ -12,19 +12,20 @@ from __future__ import annotations
 import csv
 import re
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any
 
 from loguru import logger
 
 from paladino.db import Neo4jConnection
 
-
 # ---------------------------------------------------------------------------
 # String normaliser (mirrors download.py _norm)
 # ---------------------------------------------------------------------------
+
 
 def _norm(name: str) -> str:
     """Lower-case and strip spaces / underscores / hyphens / dots."""
@@ -35,47 +36,98 @@ def _norm(name: str) -> str:
 # Known column variants per semantic field
 # ---------------------------------------------------------------------------
 
-_COMPANY_CF_VARIANTS: frozenset[str] = frozenset({
-    "cfazienda", "companycf", "codicefiscaleazienda", "cf",
-    "aziendacf", "partitaiva", "piva", "vatnumber", "codicefiscale",
-})
-_COMPANY_NAME_VARIANTS: frozenset[str] = frozenset({
-    "nome", "nomeazienda", "ragionesociale", "denominazione",
-    "companyname", "name", "ditta",
-})
-_COMPANY_ATECO_VARIANTS: frozenset[str] = frozenset({
-    "ateco", "codiceateco", "sectorcode", "sector", "settore",
-})
-_COMPANY_REGIONE_VARIANTS: frozenset[str] = frozenset({
-    "regione", "region", "provincia", "province",
-})
+_COMPANY_CF_VARIANTS: frozenset[str] = frozenset(
+    {
+        "cfazienda",
+        "companycf",
+        "codicefiscaleazienda",
+        "cf",
+        "aziendacf",
+        "partitaiva",
+        "piva",
+        "vatnumber",
+        "codicefiscale",
+    }
+)
+_COMPANY_NAME_VARIANTS: frozenset[str] = frozenset(
+    {
+        "nome",
+        "nomeazienda",
+        "ragionesociale",
+        "denominazione",
+        "companyname",
+        "name",
+        "ditta",
+    }
+)
+_COMPANY_ATECO_VARIANTS: frozenset[str] = frozenset(
+    {
+        "ateco",
+        "codiceateco",
+        "sectorcode",
+        "sector",
+        "settore",
+    }
+)
+_COMPANY_REGIONE_VARIANTS: frozenset[str] = frozenset(
+    {
+        "regione",
+        "region",
+        "provincia",
+        "province",
+    }
+)
 
-_TENDER_CIG_VARIANTS: frozenset[str] = frozenset({
-    "cig", "codicecig", "tenderid", "tendercode",
-})
-_TENDER_OGGETTO_VARIANTS: frozenset[str] = frozenset({
-    "oggetto", "oggettoappalto", "description", "descrizione",
-    "titolo", "title",
-})
-_TENDER_IMPORTO_VARIANTS: frozenset[str] = frozenset({
-    "importo", "valore", "amount", "value", "importoaggiudicazione",
-    "importobase",
-})
-_TENDER_BUYER_VARIANTS: frozenset[str] = frozenset({
-    "stazione", "stazione_appaltante", "buyername", "buyer",
-    "amministrazione", "ente", "ente_appaltante",
-})
+_TENDER_CIG_VARIANTS: frozenset[str] = frozenset(
+    {
+        "cig",
+        "codicecig",
+        "tenderid",
+        "tendercode",
+    }
+)
+_TENDER_OGGETTO_VARIANTS: frozenset[str] = frozenset(
+    {
+        "oggetto",
+        "oggettoappalto",
+        "description",
+        "descrizione",
+        "titolo",
+        "title",
+    }
+)
+_TENDER_IMPORTO_VARIANTS: frozenset[str] = frozenset(
+    {
+        "importo",
+        "valore",
+        "amount",
+        "value",
+        "importoaggiudicazione",
+        "importobase",
+    }
+)
+_TENDER_BUYER_VARIANTS: frozenset[str] = frozenset(
+    {
+        "stazione",
+        "stazione_appaltante",
+        "buyername",
+        "buyer",
+        "amministrazione",
+        "ente",
+        "ente_appaltante",
+    }
+)
 
 # Ordered map: (semantic_field, node_type, variant_set)
 _FIELD_REGISTRY: list[tuple[str, str, frozenset[str]]] = [
-    ("cf",          "Company", _COMPANY_CF_VARIANTS),
-    ("nome",        "Company", _COMPANY_NAME_VARIANTS),
-    ("ateco",       "Company", _COMPANY_ATECO_VARIANTS),
-    ("regione",     "Company", _COMPANY_REGIONE_VARIANTS),
-    ("cig",         "Tender",  _TENDER_CIG_VARIANTS),
-    ("oggetto",     "Tender",  _TENDER_OGGETTO_VARIANTS),
-    ("importo",     "Tender",  _TENDER_IMPORTO_VARIANTS),
-    ("buyer_name",  "Tender",  _TENDER_BUYER_VARIANTS),
+    ("cf", "Company", _COMPANY_CF_VARIANTS),
+    ("nome", "Company", _COMPANY_NAME_VARIANTS),
+    ("ateco", "Company", _COMPANY_ATECO_VARIANTS),
+    ("regione", "Company", _COMPANY_REGIONE_VARIANTS),
+    ("cig", "Tender", _TENDER_CIG_VARIANTS),
+    ("oggetto", "Tender", _TENDER_OGGETTO_VARIANTS),
+    ("importo", "Tender", _TENDER_IMPORTO_VARIANTS),
+    ("buyer_name", "Tender", _TENDER_BUYER_VARIANTS),
 ]
 
 
@@ -83,13 +135,15 @@ _FIELD_REGISTRY: list[tuple[str, str, frozenset[str]]] = [
 # Result dataclasses
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FieldMap:
     """Maps one CSV column to one graph field with a confidence score."""
+
     csv_column: str
     graph_field: str
-    node_type: str        # Company | Tender | CustomRecord
-    confidence: float     # 1.0 = exact variant hit, 0.7 = partial
+    node_type: str  # Company | Tender | CustomRecord
+    confidence: float  # 1.0 = exact variant hit, 0.7 = partial
 
 
 @dataclass
@@ -98,18 +152,17 @@ class ImportResult:
     rows_merged: int = 0
     rows_created: int = 0
     rows_skipped: int = 0
-    warnings: List[str] = field(default_factory=list)
-    column_map_used: Dict[str, str] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
+    column_map_used: dict[str, str] = field(default_factory=dict)
     node_type_detected: str = "CustomRecord"
     dry_run: bool = False
-    generated_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    generated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 # ---------------------------------------------------------------------------
 # Core importer
 # ---------------------------------------------------------------------------
+
 
 class CustomCSVImporter:
     """
@@ -128,7 +181,7 @@ class CustomCSVImporter:
 
     def __init__(
         self,
-        db: Optional[Neo4jConnection] = None,
+        db: Neo4jConnection | None = None,
         batch_size: int = BATCH_SIZE,
     ) -> None:
         from paladino.config import settings  # lazy to avoid circular at module load
@@ -147,8 +200,8 @@ class CustomCSVImporter:
     def import_file(
         self,
         path: Path | str,
-        column_map_override: Optional[Dict[str, str]] = None,
-        node_type_override: Optional[str] = None,
+        column_map_override: dict[str, str] | None = None,
+        node_type_override: str | None = None,
         dry_run: bool = False,
     ) -> ImportResult:
         """
@@ -220,11 +273,11 @@ class CustomCSVImporter:
     def _build_column_map(
         self,
         headers: Sequence[str],
-        override: Optional[Dict[str, str]],
-    ) -> List[FieldMap]:
+        override: dict[str, str] | None,
+    ) -> list[FieldMap]:
         """Return FieldMap list for matched columns (duplicates discarded)."""
         used_fields: set[str] = set()
-        maps: List[FieldMap] = []
+        maps: list[FieldMap] = []
 
         for col in headers:
             col_norm = _norm(col)
@@ -268,7 +321,7 @@ class CustomCSVImporter:
         return "CustomRecord"
 
     @staticmethod
-    def _auto_detect_node_type(field_maps: List[FieldMap]) -> str:
+    def _auto_detect_node_type(field_maps: list[FieldMap]) -> str:
         company_score = sum(1 for fm in field_maps if fm.node_type == "Company")
         tender_score = sum(1 for fm in field_maps if fm.node_type == "Tender")
         if company_score == 0 and tender_score == 0:
@@ -276,7 +329,7 @@ class CustomCSVImporter:
         return "Company" if company_score >= tender_score else "Tender"
 
     @staticmethod
-    def _primary_key_column(node_type: str, field_maps: List[FieldMap]) -> Optional[str]:
+    def _primary_key_column(node_type: str, field_maps: list[FieldMap]) -> str | None:
         pk_field = {"Company": "cf", "Tender": "cig"}.get(node_type)
         if not pk_field:
             return None
@@ -290,9 +343,7 @@ class CustomCSVImporter:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _read_csv(
-        path: Path, result: ImportResult
-    ) -> tuple[List[str], List[Dict[str, Any]]]:
+    def _read_csv(path: Path, result: ImportResult) -> tuple[list[str], list[dict[str, Any]]]:
         raw = path.read_text(encoding="utf-8-sig", errors="replace")
         lines = raw.splitlines()
         if not lines:
@@ -308,10 +359,13 @@ class CustomCSVImporter:
 
         reader = csv.DictReader(raw.splitlines(), delimiter=delimiter)
         headers = list(reader.fieldnames or [])
-        rows: List[Dict[str, Any]] = []
+        rows: list[dict[str, Any]] = []
         for i, row in enumerate(reader):
-            cleaned = {k.strip(): (v.strip() if isinstance(v, str) else v)
-                       for k, v in row.items() if k is not None}
+            cleaned = {
+                k.strip(): (v.strip() if isinstance(v, str) else v)
+                for k, v in row.items()
+                if k is not None
+            }
             rows.append(cleaned)
             if i > 0 and i % 50_000 == 0:
                 logger.debug(f"Read {i:,} rows from {path.name}…")
@@ -324,17 +378,17 @@ class CustomCSVImporter:
 
     def _load_rows(
         self,
-        rows: List[Dict[str, Any]],
-        field_maps: List[FieldMap],
+        rows: list[dict[str, Any]],
+        field_maps: list[FieldMap],
         node_type: str,
         result: ImportResult,
     ) -> None:
         pk_col = self._primary_key_column(node_type, field_maps)
-        import_ts = datetime.now(timezone.utc).isoformat()
+        import_ts = datetime.now(UTC).isoformat()
 
-        batch: List[Dict[str, Any]] = []
+        batch: list[dict[str, Any]] = []
 
-        def flush(b: List[Dict[str, Any]]) -> None:
+        def flush(b: list[dict[str, Any]]) -> None:
             if not b:
                 return
             if node_type == "Company":
@@ -346,7 +400,7 @@ class CustomCSVImporter:
 
         for row in rows:
             # Remap keys
-            remapped: Dict[str, Any] = {}
+            remapped: dict[str, Any] = {}
             for fm in field_maps:
                 val = row.get(fm.csv_column)
                 if val is not None and val != "":
@@ -354,11 +408,7 @@ class CustomCSVImporter:
 
             # Carry unmapped columns as extras
             mapped_cols = {fm.csv_column for fm in field_maps}
-            extras = {
-                f"_extra_{k}": v
-                for k, v in row.items()
-                if k not in mapped_cols and v
-            }
+            extras = {f"_extra_{k}": v for k, v in row.items() if k not in mapped_cols and v}
             remapped.update(extras)
             remapped["_import_ts"] = import_ts
             remapped["_import_source"] = "custom_csv_import"
@@ -378,7 +428,7 @@ class CustomCSVImporter:
 
         flush(batch)
 
-    def _merge_company_batch(self, batch: List[Dict], result: ImportResult) -> None:
+    def _merge_company_batch(self, batch: list[dict], result: ImportResult) -> None:
         query = """
         UNWIND $rows AS row
         MERGE (c:Company {cf: row.cf})
@@ -406,7 +456,7 @@ class CustomCSVImporter:
             result.rows_merged -= len(batch)
             result.rows_skipped += len(batch)
 
-    def _merge_tender_batch(self, batch: List[Dict], result: ImportResult) -> None:
+    def _merge_tender_batch(self, batch: list[dict], result: ImportResult) -> None:
         query = """
         UNWIND $rows AS row
         MERGE (t:Tender {cig: row.cig})
@@ -433,7 +483,7 @@ class CustomCSVImporter:
             result.rows_merged -= len(batch)
             result.rows_skipped += len(batch)
 
-    def _merge_custom_batch(self, batch: List[Dict], result: ImportResult) -> None:
+    def _merge_custom_batch(self, batch: list[dict], result: ImportResult) -> None:
         query = """
         UNWIND $rows AS row
         MERGE (n:CustomRecord {import_id: row.import_id})

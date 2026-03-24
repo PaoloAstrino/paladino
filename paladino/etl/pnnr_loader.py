@@ -3,38 +3,38 @@ PNRR data loader - Bulk load to Neo4j.
 """
 
 import polars as pl
-from typing import Dict
-from neo4j import Driver
 from loguru import logger
+from neo4j import Driver
 from tqdm import tqdm
 
 
 class PnnrNeo4jLoader:
     """Load PNRR data into Neo4j graph database."""
-    
+
     def __init__(self, driver: Driver, batch_size: int = 2000):
         """
         Initialize loader.
         """
         self.driver = driver
         self.batch_size = batch_size
-    
+
     def load_companies(self, df: pl.DataFrame) -> int:
         """
         Load or update company nodes from PNRR data.
         """
         if df.is_empty():
             return 0
-            
+
         logger.info(f"Loading {len(df)} PNRR-related companies...")
         total_loaded = 0
-        
+
         with self.driver.session() as session:
             for i in tqdm(range(0, len(df), self.batch_size), desc="Loading PNRR companies"):
-                batch = df[i:i + self.batch_size]
+                batch = df[i : i + self.batch_size]
                 rows = batch.to_dicts()
-                
-                result = session.run("""
+
+                result = session.run(
+                    """
                     UNWIND $rows as row
                     MERGE (c:Company {cf: row.cf})
                     ON CREATE SET 
@@ -52,10 +52,12 @@ class PnnrNeo4jLoader:
                         c.ateco = coalesce(c.ateco, row.ateco),
                         c.forma_giuridica = coalesce(c.forma_giuridica, row.forma_giuridica)
                     RETURN count(c) as loaded
-                """, rows=rows)
-                
+                """,
+                    rows=rows,
+                )
+
                 total_loaded += result.single()["loaded"]
-        
+
         return total_loaded
 
     def load_involvement(self, df: pl.DataFrame) -> int:
@@ -64,16 +66,17 @@ class PnnrNeo4jLoader:
         """
         if df.is_empty():
             return 0
-            
+
         logger.info(f"Loading {len(df)} PNRR involvement links...")
         total_loaded = 0
-        
+
         with self.driver.session() as session:
             for i in tqdm(range(0, len(df), self.batch_size), desc="Loading involvement"):
-                batch = df[i:i + self.batch_size]
+                batch = df[i : i + self.batch_size]
                 rows = batch.to_dicts()
-                
-                result = session.run("""
+
+                result = session.run(
+                    """
                     UNWIND $rows as row
                     MATCH (c:Company {cf: row.company_cf})
                     MERGE (p:Project {cup: row.project_cup})
@@ -85,10 +88,12 @@ class PnnrNeo4jLoader:
                         rel.date = datetime(row.date),
                         rel.confidence = row.confidence
                     RETURN count(rel) as loaded
-                """, rows=rows)
-                
+                """,
+                    rows=rows,
+                )
+
                 total_loaded += result.single()["loaded"]
-        
+
         return total_loaded
 
     def load_sub_contracts(self, df: pl.DataFrame) -> int:
@@ -97,16 +102,17 @@ class PnnrNeo4jLoader:
         """
         if df.is_empty():
             return 0
-            
+
         logger.info(f"Loading {len(df)} PNRR sub-contractor links...")
         total_loaded = 0
-        
+
         with self.driver.session() as session:
             for i in tqdm(range(0, len(df), self.batch_size), desc="Loading sub-contracts"):
-                batch = df[i:i + self.batch_size]
+                batch = df[i : i + self.batch_size]
                 rows = batch.to_dicts()
-                
-                result = session.run("""
+
+                result = session.run(
+                    """
                     UNWIND $rows as row
                     MATCH (c:Company {cf: row.sub_cf})
                     
@@ -128,10 +134,12 @@ class PnnrNeo4jLoader:
                             rel.date = datetime(row.date)
                     )
                     RETURN count(c) as processed
-                """, rows=rows)
-                
+                """,
+                    rows=rows,
+                )
+
                 total_loaded += result.single()["processed"]
-        
+
         return total_loaded
 
     def load_subcontracts_to(self, df: pl.DataFrame) -> int:
@@ -155,10 +163,11 @@ class PnnrNeo4jLoader:
 
         with self.driver.session() as session:
             for i in tqdm(range(0, len(df), self.batch_size), desc="Loading SUBCONTRACTS_TO"):
-                batch = df[i:i + self.batch_size]
+                batch = df[i : i + self.batch_size]
                 rows = batch.to_dicts()
 
-                result = session.run("""
+                result = session.run(
+                    """
                     UNWIND $rows AS row
 
                     // Find the winner of the tender by CIG
@@ -180,11 +189,13 @@ class PnnrNeo4jLoader:
                     RETURN
                         count(CASE WHEN winner IS NOT NULL THEN 1 END) AS linked,
                         count(CASE WHEN winner IS NULL     THEN 1 END) AS skipped
-                """, rows=rows)
+                """,
+                    rows=rows,
+                )
 
                 rec = result.single()
                 total_loaded += rec["linked"]
-                skipped       += rec["skipped"]
+                skipped += rec["skipped"]
 
         if skipped > 0:
             logger.warning(

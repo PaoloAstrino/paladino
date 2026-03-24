@@ -30,15 +30,14 @@ from __future__ import annotations
 import csv
 import io
 import json
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from loguru import logger
 
 from paladino.analytics.ownership_graph import OwnershipGraphAnalyzer
 from paladino.analytics.shell_company_detector import ShellCompanyDetector
 from paladino.db import Neo4jConnection
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Internal helpers
@@ -50,6 +49,7 @@ _SUPPORTED_FORMATS = {"json", "md", "csv"}
 # ─────────────────────────────────────────────────────────────────────────────
 # Generator
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class UBOReportGenerator:
     """
@@ -64,14 +64,14 @@ class UBOReportGenerator:
     def __init__(self, conn: Neo4jConnection) -> None:
         self.conn = conn
         self._ownership_analyzer = OwnershipGraphAnalyzer(conn)
-        self._shell_detector     = ShellCompanyDetector(conn.driver)
+        self._shell_detector = ShellCompanyDetector(conn.driver)
 
     # ── public API ───────────────────────────────────────────────────────────
 
     def generate(
         self,
         company_id: str,
-        format:     str = "json",
+        format: str = "json",
     ) -> str:
         """
         Generate a UBO report for *company_id*.
@@ -111,7 +111,7 @@ class UBOReportGenerator:
 
     # ── data collection ───────────────────────────────────────────────────────
 
-    def _collect_data(self, company_id: str) -> Dict[str, Any]:
+    def _collect_data(self, company_id: str) -> dict[str, Any]:
         """
         Pull all data needed for the report from the graph.
 
@@ -128,27 +128,27 @@ class UBOReportGenerator:
         company_info = self._get_company_info(company_id)
 
         ownership_chain = self._ownership_analyzer.get_ownership_chain(company_id)
-        ubos            = self._extract_ubos(ownership_chain)
+        ubos = self._extract_ubos(ownership_chain)
         corporate_family = self._ownership_analyzer.get_corporate_family(company_id)
-        shell_risk      = self._get_shell_risk(company_id)
-        fraud_patterns  = self._get_fraud_patterns(company_id)
-        directors       = self._get_directors(company_id)
-        supply_chain    = self._ownership_analyzer.get_supply_chain(company_id)
+        shell_risk = self._get_shell_risk(company_id)
+        fraud_patterns = self._get_fraud_patterns(company_id)
+        directors = self._get_directors(company_id)
+        supply_chain = self._ownership_analyzer.get_supply_chain(company_id)
 
         return {
-            "generated_at":   datetime.now(timezone.utc).isoformat(),
-            "company_id":     company_id,
-            "company_info":   company_info,
+            "generated_at": datetime.now(UTC).isoformat(),
+            "company_id": company_id,
+            "company_info": company_info,
             "ownership_chain": ownership_chain,
-            "ubos":           ubos,
+            "ubos": ubos,
             "corporate_family": corporate_family,
-            "shell_risk":     shell_risk,
+            "shell_risk": shell_risk,
             "fraud_patterns": fraud_patterns,
-            "directors":      directors,
-            "supply_chain":   supply_chain,
+            "directors": directors,
+            "supply_chain": supply_chain,
         }
 
-    def _get_company_info(self, company_id: str) -> Dict[str, Any]:
+    def _get_company_info(self, company_id: str) -> dict[str, Any]:
         rows = self.conn.run_query(
             """
             MATCH (c:Company {cf: $cf})
@@ -168,7 +168,7 @@ class UBOReportGenerator:
             raise KeyError(f"Company {company_id!r} not found in graph")
         return dict(rows[0])
 
-    def _extract_ubos(self, ownership_chain: List[Dict]) -> List[Dict]:
+    def _extract_ubos(self, ownership_chain: list[dict]) -> list[dict]:
         """
         Filter the ownership chain to terminal nodes (the actual UBOs).
 
@@ -192,17 +192,13 @@ class UBOReportGenerator:
                 has_owner.add(target_id)
 
         # UBOs = nodes with no owner in this chain
-        return [
-            {"ubo_id": nid, **info}
-            for nid, info in all_nodes.items()
-            if nid not in has_owner
-        ]
+        return [{"ubo_id": nid, **info} for nid, info in all_nodes.items() if nid not in has_owner]
 
-    def _get_shell_risk(self, company_id: str) -> Optional[Dict]:
+    def _get_shell_risk(self, company_id: str) -> dict | None:
         result = self._shell_detector.score_single(company_id)
         return result.as_dict() if result else None
 
-    def _get_fraud_patterns(self, company_id: str) -> List[Dict]:
+    def _get_fraud_patterns(self, company_id: str) -> list[dict]:
         rows = self.conn.run_query(
             """
             MATCH (c:Company {cf: $cf})-[:FLAGGED_BY]->(f:FraudPattern)
@@ -217,7 +213,7 @@ class UBOReportGenerator:
         )
         return [dict(r) for r in (rows or [])]
 
-    def _get_directors(self, company_id: str) -> List[Dict]:
+    def _get_directors(self, company_id: str) -> list[dict]:
         rows = self.conn.run_query(
             """
             MATCH (p:Person)-[r:REPRESENTS]->(c:Company {cf: $cf})
@@ -234,41 +230,41 @@ class UBOReportGenerator:
 
     # ── renderers ─────────────────────────────────────────────────────────────
 
-    def _render_markdown(self, data: Dict[str, Any]) -> str:
-        info    = data.get("company_info") or {}
-        name    = info.get("name") or data["company_id"]
-        risk    = data.get("shell_risk") or {}
-        ubos    = data.get("ubos") or []
-        dirs    = data.get("directors") or []
-        frauds  = data.get("fraud_patterns") or []
-        family  = data.get("corporate_family") or []
-        supply  = data.get("supply_chain") or []
+    def _render_markdown(self, data: dict[str, Any]) -> str:
+        info = data.get("company_info") or {}
+        name = info.get("name") or data["company_id"]
+        risk = data.get("shell_risk") or {}
+        ubos = data.get("ubos") or []
+        dirs = data.get("directors") or []
+        frauds = data.get("fraud_patterns") or []
+        family = data.get("corporate_family") or []
+        supply = data.get("supply_chain") or []
 
         lines: list[str] = [
             f"# UBO Report — {name}",
-            f"",
+            "",
             f"**Generated:** {data['generated_at']}  ",
             f"**Company CF:** `{data['company_id']}`  ",
             f"**ATECO:** {info.get('ateco', 'N/A')}  ",
             f"**Address:** {info.get('address', 'N/A')}  ",
             f"**VAT Active:** {info.get('vat_active', 'Unknown')}  ",
-            f"",
-            f"---",
-            f"",
-            f"## Shell Risk Score",
-            f"",
+            "",
+            "---",
+            "",
+            "## Shell Risk Score",
+            "",
         ]
 
         if risk:
             score = risk.get("shell_score", 0)
-            tier  = risk.get("risk_tier", "N/A")
+            tier = risk.get("risk_tier", "N/A")
             tier_badge = {"HIGH_RISK": "🔴", "MEDIUM_RISK": "🟡", "LOW_RISK": "🟢"}.get(tier, "⚪")
             lines += [
                 f"**Score:** {score:.2%}  ",
                 f"**Risk Tier:** {tier_badge} {tier}  ",
-                f"",
-                f"| Factor | Contribution |",
-                f"|--------|-------------|",
+                "",
+                "| Factor | Contribution |",
+                "|--------|-------------|",
             ]
             for factor, contrib in (risk.get("component_scores") or {}).items():
                 lines.append(f"| {factor} | {contrib:.4f} |")
@@ -290,8 +286,8 @@ class UBOReportGenerator:
             ]
             for d in dirs:
                 lines.append(
-                    f"| {d.get('name','')} | {d.get('person_cf','')} | "
-                    f"{d.get('role','')} | {d.get('start_date','')} | {d.get('end_date','')} |"
+                    f"| {d.get('name', '')} | {d.get('person_cf', '')} | "
+                    f"{d.get('role', '')} | {d.get('start_date', '')} | {d.get('end_date', '')} |"
                 )
         else:
             lines.append("_No director data available._")
@@ -323,7 +319,7 @@ class UBOReportGenerator:
 
         return "\n".join(lines)
 
-    def _render_csv(self, data: Dict[str, Any]) -> str:
+    def _render_csv(self, data: dict[str, Any]) -> str:
         """
         Flat CSV with one row per UBO (or director if no UBOs).
         Columns: report_date, company_id, company_name, ubo_id,
@@ -331,25 +327,34 @@ class UBOReportGenerator:
         """
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow([
-            "report_date", "company_id", "company_name",
-            "ubo_id", "shell_score", "risk_tier", "fraud_count",
-        ])
+        writer.writerow(
+            [
+                "report_date",
+                "company_id",
+                "company_name",
+                "ubo_id",
+                "shell_score",
+                "risk_tier",
+                "fraud_count",
+            ]
+        )
 
-        info    = data.get("company_info") or {}
-        ubos    = data.get("ubos") or [{}]
-        risk    = data.get("shell_risk") or {}
-        frauds  = data.get ("fraud_patterns") or []
+        info = data.get("company_info") or {}
+        ubos = data.get("ubos") or [{}]
+        risk = data.get("shell_risk") or {}
+        frauds = data.get("fraud_patterns") or []
 
         for ubo in ubos:
-            writer.writerow([
-                data["generated_at"],
-                data["company_id"],
-                info.get("name", ""),
-                ubo.get("ubo_id", ""),
-                risk.get("shell_score", ""),
-                risk.get("risk_tier", ""),
-                len(frauds),
-            ])
+            writer.writerow(
+                [
+                    data["generated_at"],
+                    data["company_id"],
+                    info.get("name", ""),
+                    ubo.get("ubo_id", ""),
+                    risk.get("shell_score", ""),
+                    risk.get("risk_tier", ""),
+                    len(frauds),
+                ]
+            )
 
         return output.getvalue()

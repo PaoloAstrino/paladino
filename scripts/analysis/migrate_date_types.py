@@ -33,25 +33,25 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import Tuple
 
 from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 # ──────────────────────────────────────────────────────────────────────
 # Bootstrap — ensure project root is on sys.path when run directly
 # ──────────────────────────────────────────────────────────────────────
 try:
-    from paladino.db import Neo4jConnection
     from paladino.config import get_settings
+    from paladino.db import Neo4jConnection
 except ImportError:
     import pathlib
+
     sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
-    from paladino.db import Neo4jConnection
     from paladino.config import get_settings
+    from paladino.db import Neo4jConnection
 
 _console = Console()
 
@@ -136,7 +136,7 @@ def _migrate_step(
     step: dict,
     batch_size: int,
     dry_run: bool,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """
     Migrate all pending nodes for one field in batches.
 
@@ -212,7 +212,7 @@ def run_migration(
 
         if pending == 0:
             status = "[green]✓ up-to-date[/green]"
-            _console.print(f"  [green]Already up-to-date (0 strings found)[/green]")
+            _console.print("  [green]Already up-to-date (0 strings found)[/green]")
         elif dry_run:
             status = f"[yellow]{pending} pending[/yellow]"
             _console.print(f"  [yellow]{pending} records need migration[/yellow]")

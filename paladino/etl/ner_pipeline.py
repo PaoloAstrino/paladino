@@ -31,13 +31,17 @@ class UnstructuredNERPipeline:
 
         partial_results: list[NERResult] = []
         for index, chunk in enumerate(chunks, start=1):
-            payload = self._extract_chunk(document=document, chunk=chunk, index=index, total=len(chunks))
+            payload = self._extract_chunk(
+                document=document, chunk=chunk, index=index, total=len(chunks)
+            )
             payload = self._sanitize_payload(payload)
             partial_results.append(NERResult.model_validate(payload))
 
         return self._merge_results(partial_results)
 
-    def _extract_chunk(self, document: ExtractedDocument, chunk: str, index: int, total: int) -> dict:
+    def _extract_chunk(
+        self, document: ExtractedDocument, chunk: str, index: int, total: int
+    ) -> dict:
         system_prompt = (
             "You are an information extraction engine for Italian public-sector documents. "
             "Extract entities and relationships into valid JSON. "
@@ -46,9 +50,9 @@ class UnstructuredNERPipeline:
 
         user_prompt = (
             "Return JSON with schema: "
-            "{\"entities\": [{\"id\": \"...\", \"type\": \"Company|Person|Location|Tender|Project|Amount|Identifier\", "
-            "\"properties\": { ... }, \"confidence\": 0.0}], "
-            "\"relationships\": [{\"source_id\": \"...\", \"target_id\": \"...\", \"type\": \"...\", \"confidence\": 0.0}]}. "
+            '{"entities": [{"id": "...", "type": "Company|Person|Location|Tender|Project|Amount|Identifier", '
+            '"properties": { ... }, "confidence": 0.0}], '
+            '"relationships": [{"source_id": "...", "target_id": "...", "type": "...", "confidence": 0.0}]}. '
             "Preserve CIG/CUP/CF/PIVA values when found. "
             f"Source: {document.source}. Chunk {index}/{total}. Content:\n\n{chunk}"
         )
@@ -73,7 +77,9 @@ class UnstructuredNERPipeline:
                 continue
             entity_type = str(entity.get("type") or "Identifier").strip() or "Identifier"
             entity_id = str(entity.get("id") or f"ent_{index}").strip() or f"ent_{index}"
-            properties = entity.get("properties") if isinstance(entity.get("properties"), dict) else {}
+            properties = (
+                entity.get("properties") if isinstance(entity.get("properties"), dict) else {}
+            )
             confidence = entity.get("confidence")
             try:
                 confidence_value = float(confidence) if confidence is not None else 0.0
@@ -162,7 +168,9 @@ class UnstructuredNERPipeline:
                 if key in merged_entities:
                     current = merged_entities[key]
                     current.confidence = max(current.confidence, entity.confidence)
-                    current.properties = self._merge_properties(current.properties, entity.properties)
+                    current.properties = self._merge_properties(
+                        current.properties, entity.properties
+                    )
                     merged_id = current.id
                 else:
                     merged_id = entity.id or f"ent_{uuid.uuid4().hex[:10]}"

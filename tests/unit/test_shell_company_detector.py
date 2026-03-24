@@ -6,20 +6,18 @@ Uses a mock Neo4j driver so tests run without a live database.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from paladino.analytics.shell_company_detector import ShellCompanyDetector, ShellRiskScore
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixtures
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _make_mock_driver(rows: list[dict] | None = None) -> MagicMock:
     """Return a mock driver whose session.run() yields *rows*."""
-    mock_result  = MagicMock()
+    mock_result = MagicMock()
     mock_result.__iter__ = MagicMock(return_value=iter(rows or []))
 
     mock_session = MagicMock()
@@ -34,28 +32,28 @@ def _make_mock_driver(rows: list[dict] | None = None) -> MagicMock:
 
 # One realistic row of raw metrics
 _HIGH_RISK_ROW = {
-    "cf":                   "12345678901",
-    "name":                 "GUSCIO SRL",
-    "tender_wins":          15,
-    "max_employees":        1,
-    "chain_depth":          7,
-    "vat_active":           False,    # VAT anomaly
-    "last_filing_year":     2019,     # 5+ years ago → dormant
-    "director_board_count": 25,       # board overconcentration
-    "sub_only":             True,
+    "cf": "12345678901",
+    "name": "GUSCIO SRL",
+    "tender_wins": 15,
+    "max_employees": 1,
+    "chain_depth": 7,
+    "vat_active": False,  # VAT anomaly
+    "last_filing_year": 2019,  # 5+ years ago → dormant
+    "director_board_count": 25,  # board overconcentration
+    "sub_only": True,
     "address_shared_count": 4,
 }
 
 _LOW_RISK_ROW = {
-    "cf":                   "98765432109",
-    "name":                 "NORMALE SPA",
-    "tender_wins":          2,
-    "max_employees":        150,
-    "chain_depth":          1,
-    "vat_active":           True,
-    "last_filing_year":     2024,
+    "cf": "98765432109",
+    "name": "NORMALE SPA",
+    "tender_wins": 2,
+    "max_employees": 150,
+    "chain_depth": 1,
+    "vat_active": True,
+    "last_filing_year": 2024,
     "director_board_count": 3,
-    "sub_only":             False,
+    "sub_only": False,
     "address_shared_count": 0,
 }
 
@@ -63,6 +61,7 @@ _LOW_RISK_ROW = {
 # ─────────────────────────────────────────────────────────────────────────────
 # ShellRiskScore unit tests
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestShellRiskScore:
     def test_as_dict_keys(self):
@@ -83,8 +82,10 @@ class TestShellRiskScore:
 
     def test_score_rounded_in_as_dict(self):
         s = ShellRiskScore(
-            company_id="x", company_name="y",
-            shell_score=0.123456789, risk_tier="HIGH_RISK",
+            company_id="x",
+            company_name="y",
+            shell_score=0.123456789,
+            risk_tier="HIGH_RISK",
         )
         assert len(str(s.as_dict()["shell_score"])) <= 8  # rounded to 4dp
 
@@ -92,6 +93,7 @@ class TestShellRiskScore:
 # ─────────────────────────────────────────────────────────────────────────────
 # ShellCompanyDetector._compute_score
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestComputeScore:
     def setup_method(self):
@@ -114,8 +116,15 @@ class TestComputeScore:
 
     def test_all_components_present(self):
         score = self.detector._compute_score(_HIGH_RISK_ROW)
-        expected = {"legacy", "vat_anomaly", "dormancy", "board_conc",
-                    "supplier_only", "address_flag", "depth_bonus"}
+        expected = {
+            "legacy",
+            "vat_anomaly",
+            "dormancy",
+            "board_conc",
+            "supplier_only",
+            "address_flag",
+            "depth_bonus",
+        }
         assert set(score.component_scores.keys()) == expected
 
     def test_weights_sum_to_one(self):
@@ -135,6 +144,7 @@ class TestComputeScore:
 
     def test_dormancy_fires_after_threshold(self):
         import datetime
+
         old_year = datetime.datetime.now().year - 5
         row = {**_LOW_RISK_ROW, "last_filing_year": old_year}
         score = self.detector._compute_score(row)
@@ -145,37 +155,38 @@ class TestComputeScore:
 # ShellCompanyDetector.score_all / score_single
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestScoreAll:
     def test_score_all_returns_sorted_results(self):
-        driver  = _make_mock_driver([_HIGH_RISK_ROW, _LOW_RISK_ROW])
+        driver = _make_mock_driver([_HIGH_RISK_ROW, _LOW_RISK_ROW])
         detector = ShellCompanyDetector(driver=driver)
-        results  = detector.score_all(limit=10)
+        results = detector.score_all(limit=10)
         assert len(results) == 2
         assert results[0].shell_score >= results[1].shell_score
 
     def test_score_all_empty_graph(self):
-        driver  = _make_mock_driver([])
+        driver = _make_mock_driver([])
         detector = ShellCompanyDetector(driver=driver)
-        results  = detector.score_all()
+        results = detector.score_all()
         assert results == []
 
     def test_score_all_graceful_db_error(self):
         driver = MagicMock()
         driver.session.side_effect = Exception("DB offline")
         detector = ShellCompanyDetector(driver=driver)
-        results  = detector.score_all()
+        results = detector.score_all()
         assert results == []
 
     def test_get_high_risk_filter(self):
-        driver  = _make_mock_driver([_HIGH_RISK_ROW, _LOW_RISK_ROW])
+        driver = _make_mock_driver([_HIGH_RISK_ROW, _LOW_RISK_ROW])
         detector = ShellCompanyDetector(driver=driver)
         all_res = detector.score_all()
-        high    = detector.get_high_risk(all_res, threshold=0.50)
+        high = detector.get_high_risk(all_res, threshold=0.50)
         assert all(r.shell_score >= 0.50 for r in high)
 
     def test_get_medium_risk_filter(self):
-        driver  = _make_mock_driver([_HIGH_RISK_ROW, _LOW_RISK_ROW])
+        driver = _make_mock_driver([_HIGH_RISK_ROW, _LOW_RISK_ROW])
         detector = ShellCompanyDetector(driver=driver)
         all_res = detector.score_all()
-        medium  = detector.get_medium_risk(all_res, low_threshold=0.35, high_threshold=0.50)
+        medium = detector.get_medium_risk(all_res, low_threshold=0.35, high_threshold=0.50)
         assert all(0.35 <= r.shell_score < 0.50 for r in medium)

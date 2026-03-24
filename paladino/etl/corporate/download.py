@@ -54,13 +54,12 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
 
 from loguru import logger
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich import box
 
 _console = Console()
 
@@ -69,11 +68,13 @@ _console = Console()
 # Data-classes
 # ─────────────────────────────────────────────────────────
 
+
 @dataclass
 class SourceFile:
     """A single discovered CSV file with its detected schema type."""
+
     path: Path
-    schema_type: str       # "directors" | "shareholders" | "generic" | "unknown"
+    schema_type: str  # "directors" | "shareholders" | "generic" | "unknown"
     row_estimate: int = 0
     notes: str = ""
 
@@ -81,10 +82,11 @@ class SourceFile:
 @dataclass
 class DiscoveryResult:
     """Result of a discovery run — what was found and what was not."""
-    local_files:   List[SourceFile] = field(default_factory=list)
-    atoka_active:  bool = False
+
+    local_files: list[SourceFile] = field(default_factory=list)
+    atoka_active: bool = False
     opencorp_active: bool = False
-    warnings:      List[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def has_any_source(self) -> bool:
@@ -99,35 +101,50 @@ class DiscoveryResult:
 # Column-name normalization helpers
 # ─────────────────────────────────────────────────────────
 
+
 def _norm(name: str) -> str:
     """Lower-case, strip spaces/underscores for fuzzy column matching."""
     return name.lower().replace(" ", "").replace("_", "").replace("-", "")
 
 
 _COMPANY_CF_VARIANTS = {
-    "cfazienda", "companycf", "codicefiscaleazienda", "cf",
-    "aziendacf", "partitaiva", "piva", "vatnumber",
+    "cfazienda",
+    "companycf",
+    "codicefiscaleazienda",
+    "cf",
+    "aziendacf",
+    "partitaiva",
+    "piva",
+    "vatnumber",
 }
 _PERSON_CF_VARIANTS = {
-    "cfpersona", "personcf", "codicefiscalepersona", "cfamministratore",
-    "cfdirettore", "cfsocio", "personalcf",
+    "cfpersona",
+    "personcf",
+    "codicefiscalepersona",
+    "cfamministratore",
+    "cfdirettore",
+    "cfsocio",
+    "personalcf",
 }
 _SHAREHOLDERCF_VARIANTS = {
-    "cfazionista", "shareholdercf", "cfsocio", "cfpartner",
+    "cfazionista",
+    "shareholdercf",
+    "cfsocio",
+    "cfpartner",
 } | _PERSON_CF_VARIANTS
-_ROLE_VARIANTS    = {"ruolo", "role", "carica", "incarico", "tipocarica"}
-_QUOTA_VARIANTS   = {"quota", "percentuale", "share", "ownership", "quotasociale"}
+_ROLE_VARIANTS = {"ruolo", "role", "carica", "incarico", "tipocarica"}
+_QUOTA_VARIANTS = {"quota", "percentuale", "share", "ownership", "quotasociale"}
 
 
-def _detect_schema(columns: List[str]) -> str:
+def _detect_schema(columns: list[str]) -> str:
     """Classify the file schema based on column names."""
     normed = {_norm(c) for c in columns}
 
-    has_company_cf  = bool(normed & _COMPANY_CF_VARIANTS)
-    has_person_cf   = bool(normed & _PERSON_CF_VARIANTS)
+    has_company_cf = bool(normed & _COMPANY_CF_VARIANTS)
+    has_person_cf = bool(normed & _PERSON_CF_VARIANTS)
     has_shareholder = bool(normed & _SHAREHOLDERCF_VARIANTS)
-    has_role        = bool(normed & _ROLE_VARIANTS)
-    has_quota       = bool(normed & _QUOTA_VARIANTS)
+    has_role = bool(normed & _ROLE_VARIANTS)
+    has_quota = bool(normed & _QUOTA_VARIANTS)
 
     if has_company_cf and has_person_cf and has_role:
         return "directors"
@@ -142,6 +159,7 @@ def _detect_schema(columns: List[str]) -> str:
 # Discovery class
 # ─────────────────────────────────────────────────────────
 
+
 class CorporateSourceDiscovery:
     """
     Scan for available corporate-structure data sources.
@@ -152,21 +170,21 @@ class CorporateSourceDiscovery:
     """
 
     # Where we look for user-provided CSV files
-    LOCAL_RAW_DIRS: List[Path] = [
+    LOCAL_RAW_DIRS: list[Path] = [
         Path("data/corporate/raw"),
         Path("data/registro_imprese"),
         Path("data/ownership"),
     ]
 
-    def __init__(self, base_dir: Optional[Path] = None) -> None:
+    def __init__(self, base_dir: Path | None = None) -> None:
         root = base_dir or Path.cwd()
         self._raw_dirs = [root / d for d in self.LOCAL_RAW_DIRS]
 
     # ── private helpers ──────────────────────────────────
 
-    def _scan_local(self) -> List[SourceFile]:
+    def _scan_local(self) -> list[SourceFile]:
         """Find all CSV files in the raw directories."""
-        found: List[SourceFile] = []
+        found: list[SourceFile] = []
         for raw_dir in self._raw_dirs:
             if not raw_dir.exists():
                 continue
@@ -180,18 +198,20 @@ class CorporateSourceDiscovery:
                         schema = _detect_schema(columns)
                         # Rough row count
                         rows = sum(1 for _ in fh)
-                    found.append(SourceFile(
-                        path=csv_path,
-                        schema_type=schema,
-                        row_estimate=rows,
-                        notes=f"sep='{sep}', cols={len(columns)}",
-                    ))
+                    found.append(
+                        SourceFile(
+                            path=csv_path,
+                            schema_type=schema,
+                            row_estimate=rows,
+                            notes=f"sep='{sep}', cols={len(columns)}",
+                        )
+                    )
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(f"Could not read {csv_path}: {exc}")
         return found
 
     def _check_apis(self) -> tuple[bool, bool]:
-        atoka    = bool(os.environ.get("ATOKA_API_KEY"))
+        atoka = bool(os.environ.get("ATOKA_API_KEY"))
         opencorp = bool(os.environ.get("OPENCORPORATES_API_KEY"))
         return atoka, opencorp
 
@@ -199,7 +219,7 @@ class CorporateSourceDiscovery:
 
     def discover(self) -> DiscoveryResult:
         """Run discovery and return a :class:`DiscoveryResult`."""
-        local  = self._scan_local()
+        local = self._scan_local()
         atoka, opencorp = self._check_apis()
 
         result = DiscoveryResult(
@@ -230,14 +250,17 @@ class CorporateSourceDiscovery:
             box=box.ROUNDED,
             show_lines=True,
         )
-        tbl.add_column("Source",  style="cyan",  no_wrap=True)
-        tbl.add_column("Status",  style="bold")
+        tbl.add_column("Source", style="cyan", no_wrap=True)
+        tbl.add_column("Status", style="bold")
         tbl.add_column("Details")
 
         if result.local_files:
             for sf in result.local_files:
-                status = "[green]FOUND[/green]" if sf.schema_type != "unknown" \
-                         else "[yellow]SKIPPED[/yellow]"
+                status = (
+                    "[green]FOUND[/green]"
+                    if sf.schema_type != "unknown"
+                    else "[yellow]SKIPPED[/yellow]"
+                )
                 tbl.add_row(
                     sf.path.name,
                     status,
@@ -265,12 +288,14 @@ class CorporateSourceDiscovery:
 
         # ── fallback guidance when nothing is found ──────
         if not result.has_any_source or "NO_SOURCES" in result.warnings:
-            _console.print(Panel(
-                _NO_SOURCE_GUIDANCE,
-                title="[bold yellow]ℹ️  No corporate data found — here's how to add it[/bold yellow]",
-                border_style="yellow",
-                expand=False,
-            ))
+            _console.print(
+                Panel(
+                    _NO_SOURCE_GUIDANCE,
+                    title="[bold yellow]ℹ️  No corporate data found — here's how to add it[/bold yellow]",
+                    border_style="yellow",
+                    expand=False,
+                )
+            )
         elif result.warnings:
             for w in result.warnings:
                 if w != "NO_SOURCES":

@@ -33,34 +33,32 @@ Usage
 
 import json
 import uuid
-from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from datetime import UTC, datetime
 
 from loguru import logger
 
-from paladino.db import Neo4jConnection
 from paladino.constants import (
+    BOARD_OVERLAP_MIN_SHARED,
     FRAUD_BID_ROTATION_MIN_OCCURRENCES,
     FRAUD_BID_ROTATION_WINDOW_DAYS,
-    FRAUD_SPLIT_TENDER_THRESHOLD_EUR,
-    FRAUD_SPLIT_TENDER_WINDOW_DAYS,
-    FRAUD_SPLIT_TENDER_MIN_COUNT,
-    FRAUD_SHORT_AWARD_DAYS,
+    FRAUD_COMMUNITY_MIN_TENDERS,
+    FRAUD_COMMUNITY_MONOPOLY_RATIO,
     FRAUD_GHOST_BIDDER_MIN_TENDERS,
-    FRAUD_UBO_MAX_DEPTH,
-    FRAUD_PRICE_ZSCORE_THRESHOLD,
-    FRAUD_PRICE_MIN_SECTOR_SAMPLES,
+    FRAUD_NETWORK_CLIQUE_TRIANGLE_THRESHOLD,
+    FRAUD_PATTERN_RISK_CONTRIBUTION,
     FRAUD_PNRR_CONCENTRATION_RATIO,
     FRAUD_PNRR_MIN_WINS,
-    FRAUD_COMMUNITY_MONOPOLY_RATIO,
-    FRAUD_COMMUNITY_MIN_TENDERS,
-    FRAUD_NETWORK_CLIQUE_TRIANGLE_THRESHOLD,
+    FRAUD_PRICE_MIN_SECTOR_SAMPLES,
+    FRAUD_PRICE_ZSCORE_THRESHOLD,
+    FRAUD_SHORT_AWARD_DAYS,
+    FRAUD_SPLIT_TENDER_MIN_COUNT,
+    FRAUD_SPLIT_TENDER_THRESHOLD_EUR,
+    FRAUD_SPLIT_TENDER_WINDOW_DAYS,
+    FRAUD_UBO_MAX_DEPTH,
     FRAUD_WINNER_LOSER_PAIR_MIN,
-    FRAUD_PATTERN_RISK_CONTRIBUTION,
-    FRAUD_PATTERN_NAMES,
-    BOARD_OVERLAP_MIN_SHARED,
     SUBCONTRACTOR_CONCENTRATION_MAX,
 )
+from paladino.db import Neo4jConnection
 
 
 class FraudPatternLibrary:
@@ -85,22 +83,22 @@ class FraudPatternLibrary:
     def __init__(self, conn: Neo4jConnection):
         self.conn = conn
         self.run_id: str = str(uuid.uuid4())
-        self._run_started_at: datetime = datetime.now(timezone.utc)
+        self._run_started_at: datetime = datetime.now(UTC)
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
     def _now_iso(self) -> str:
-        return datetime.now(timezone.utc).isoformat()
+        return datetime.now(UTC).isoformat()
 
     def _create_fraud_pattern_node(
         self,
         pattern_name: str,
         severity: str,
         description: str,
-        evidence: Dict,
-        affected_entity_ids: Optional[List[str]] = None,
+        evidence: dict,
+        affected_entity_ids: list[str] | None = None,
     ) -> str:
         """
         Persist a FraudPattern node in Neo4j and return its ID.
@@ -155,7 +153,7 @@ class FraudPatternLibrary:
         entity_label: str,
         pattern_id: str,
         score: float,
-        evidence_snippet: Dict,
+        evidence_snippet: dict,
     ) -> None:
         """
         Create a FLAGGED_BY edge from an entity node to a FraudPattern node.
@@ -214,7 +212,7 @@ class FraudPatternLibrary:
     # 1. Bid Rotation
     # ------------------------------------------------------------------
 
-    def detect_bid_rotation(self) -> List[Dict]:
+    def detect_bid_rotation(self) -> list[dict]:
         """
         Flag buyers where a small recurring group of companies take turns winning.
 
@@ -224,7 +222,7 @@ class FraudPatternLibrary:
         awards.
         """
         logger.info("[ Fraud ] Running: Bid Rotation detector...")
-        detections: List[Dict] = []
+        detections: list[dict] = []
 
         results = self.conn.run_query(
             """
@@ -247,16 +245,18 @@ class FraudPatternLibrary:
             ORDER BY total_wins DESC
             LIMIT 50
             """,
-            {"min_occurrences": FRAUD_BID_ROTATION_MIN_OCCURRENCES,
-             "window_days":     FRAUD_BID_ROTATION_WINDOW_DAYS},
+            {
+                "min_occurrences": FRAUD_BID_ROTATION_MIN_OCCURRENCES,
+                "window_days": FRAUD_BID_ROTATION_WINDOW_DAYS,
+            },
         )
 
         for row in results:
             evidence = {
-                "buyer_id":       row["buyer_id"],
-                "buyer_name":     row["buyer_name"],
+                "buyer_id": row["buyer_id"],
+                "buyer_name": row["buyer_name"],
                 "rotation_group": row["rotation_group"],
-                "total_wins":     row["total_wins"],
+                "total_wins": row["total_wins"],
             }
             affected_ids = [r["company_id"] for r in row["rotation_group"]]
 
@@ -282,8 +282,14 @@ class FraudPatternLibrary:
                 )
                 self._bump_entity_risk_score(company_rec["company_id"], "Company", "high")
 
-            detections.append({"pattern": "bid_rotation", "buyer": row["buyer_name"],
-                                "companies": len(affected_ids), "pattern_id": pattern_id})
+            detections.append(
+                {
+                    "pattern": "bid_rotation",
+                    "buyer": row["buyer_name"],
+                    "companies": len(affected_ids),
+                    "pattern_id": pattern_id,
+                }
+            )
 
         logger.info(f"[ Fraud ] Bid Rotation: {len(detections)} buyer(s) flagged.")
         return detections
@@ -292,7 +298,7 @@ class FraudPatternLibrary:
     # 2. Ghost Bidding
     # ------------------------------------------------------------------
 
-    def detect_ghost_bidding(self) -> List[Dict]:
+    def detect_ghost_bidding(self) -> list[dict]:
         """
         Flag companies that appear as participants many times but NEVER win.
 
@@ -302,7 +308,7 @@ class FraudPatternLibrary:
         different company while our ghost is structurally close (same community).
         """
         logger.info("[ Fraud ] Running: Ghost Bidding detector...")
-        detections: List[Dict] = []
+        detections: list[dict] = []
 
         # A ghost bidder: company in many tenders' communities that never wins
         results = self.conn.run_query(
@@ -330,10 +336,10 @@ class FraudPatternLibrary:
 
         for row in results:
             evidence = {
-                "ghost_company_id":   row["ghost_id"],
+                "ghost_company_id": row["ghost_id"],
                 "ghost_company_name": row["ghost_name"],
-                "community_id":       row["community"],
-                "community_tenders":  row["community_tenders"],
+                "community_id": row["community"],
+                "community_tenders": row["community_tenders"],
                 "co_community_winners": row["winner_samples"],
             }
 
@@ -358,9 +364,14 @@ class FraudPatternLibrary:
             )
             self._bump_entity_risk_score(row["ghost_id"], "Company", "medium")
 
-            detections.append({"pattern": "ghost_bidding", "company": row["ghost_name"],
-                                "community_tenders": row["community_tenders"],
-                                "pattern_id": pattern_id})
+            detections.append(
+                {
+                    "pattern": "ghost_bidding",
+                    "company": row["ghost_name"],
+                    "community_tenders": row["community_tenders"],
+                    "pattern_id": pattern_id,
+                }
+            )
 
         logger.info(f"[ Fraud ] Ghost Bidding: {len(detections)} company/ies flagged.")
         return detections
@@ -369,14 +380,14 @@ class FraudPatternLibrary:
     # 3. Split Tendering (Frazionamento)
     # ------------------------------------------------------------------
 
-    def detect_split_tendering(self) -> List[Dict]:
+    def detect_split_tendering(self) -> list[dict]:
         """
         Flag buyers that issue many low-value tenders to the same company close
         in time, effectively splitting a larger contract to stay below the EU
         procurement notification threshold (default: €40,000).
         """
         logger.info("[ Fraud ] Running: Split Tendering (Frazionamento) detector...")
-        detections: List[Dict] = []
+        detections: list[dict] = []
 
         results = self.conn.run_query(
             """
@@ -401,22 +412,22 @@ class FraudPatternLibrary:
             LIMIT 50
             """,
             {
-                "threshold":   FRAUD_SPLIT_TENDER_THRESHOLD_EUR,
-                "min_count":   FRAUD_SPLIT_TENDER_MIN_COUNT,
+                "threshold": FRAUD_SPLIT_TENDER_THRESHOLD_EUR,
+                "min_count": FRAUD_SPLIT_TENDER_MIN_COUNT,
                 "window_days": FRAUD_SPLIT_TENDER_WINDOW_DAYS,
             },
         )
 
         for row in results:
             evidence = {
-                "buyer_id":      row["buyer_id"],
-                "buyer_name":    row["buyer_name"],
-                "company_id":    row["company_id"],
-                "company_name":  row["company_name"],
-                "tender_count":  row["tender_count"],
-                "total_value":   row["total_value"],
+                "buyer_id": row["buyer_id"],
+                "buyer_name": row["buyer_name"],
+                "company_id": row["company_id"],
+                "company_name": row["company_name"],
+                "tender_count": row["tender_count"],
+                "total_value": row["total_value"],
                 "threshold_eur": FRAUD_SPLIT_TENDER_THRESHOLD_EUR,
-                "sample_cigs":   row["sample_tenders"],
+                "sample_cigs": row["sample_tenders"],
             }
 
             pattern_id = self._create_fraud_pattern_node(
@@ -437,14 +448,23 @@ class FraudPatternLibrary:
                     entity_label=label,
                     pattern_id=pattern_id,
                     score=0.75,
-                    evidence_snippet={"tender_count": row["tender_count"],
-                                      "total_value": row["total_value"]},
+                    evidence_snippet={
+                        "tender_count": row["tender_count"],
+                        "total_value": row["total_value"],
+                    },
                 )
             self._bump_entity_risk_score(row["company_id"], "Company", "high")
 
-            detections.append({"pattern": "split_tendering", "buyer": row["buyer_name"],
-                                "company": row["company_name"], "count": row["tender_count"],
-                                "total": row["total_value"], "pattern_id": pattern_id})
+            detections.append(
+                {
+                    "pattern": "split_tendering",
+                    "buyer": row["buyer_name"],
+                    "company": row["company_name"],
+                    "count": row["tender_count"],
+                    "total": row["total_value"],
+                    "pattern_id": pattern_id,
+                }
+            )
 
         logger.info(f"[ Fraud ] Split Tendering: {len(detections)} pair(s) flagged.")
         return detections
@@ -453,7 +473,7 @@ class FraudPatternLibrary:
     # 4. Short Award Window
     # ------------------------------------------------------------------
 
-    def detect_short_award_window(self) -> List[Dict]:
+    def detect_short_award_window(self) -> list[dict]:
         """
         Flag tenders where the award was issued suspiciously quickly after
         publication (fewer than ``FRAUD_SHORT_AWARD_DAYS`` days).
@@ -462,7 +482,7 @@ class FraudPatternLibrary:
         and the tender was published only as a formality.
         """
         logger.info("[ Fraud ] Running: Short Award Window detector...")
-        detections: List[Dict] = []
+        detections: list[dict] = []
 
         results = self.conn.run_query(
             """
@@ -488,12 +508,12 @@ class FraudPatternLibrary:
 
         for row in results:
             evidence = {
-                "tender_id":   row["tender_id"],
-                "cig":         row["cig"],
+                "tender_id": row["tender_id"],
+                "cig": row["cig"],
                 "importo_eur": row["importo"],
-                "award_days":  row["award_days"],
-                "company":     row["company_name"],
-                "buyer":       row["buyer_name"],
+                "award_days": row["award_days"],
+                "company": row["company_name"],
+                "buyer": row["buyer_name"],
             }
             severity = "critical" if row["award_days"] <= 1 else "high"
 
@@ -510,7 +530,7 @@ class FraudPatternLibrary:
             )
 
             for entity_id, label in [
-                (row["tender_id"],  "Tender"),
+                (row["tender_id"], "Tender"),
                 (row["company_id"], "Company"),
             ]:
                 self._link_entity_to_pattern(
@@ -532,9 +552,15 @@ class FraudPatternLibrary:
                 {"tid": row["tender_id"]},
             )
 
-            detections.append({"pattern": "short_award_window", "cig": row["cig"],
-                                "days": row["award_days"], "company": row["company_name"],
-                                "pattern_id": pattern_id})
+            detections.append(
+                {
+                    "pattern": "short_award_window",
+                    "cig": row["cig"],
+                    "days": row["award_days"],
+                    "company": row["company_name"],
+                    "pattern_id": pattern_id,
+                }
+            )
 
         logger.info(f"[ Fraud ] Short Award Window: {len(detections)} tender(s) flagged.")
         return detections
@@ -543,7 +569,7 @@ class FraudPatternLibrary:
     # 5. Price Manipulation
     # ------------------------------------------------------------------
 
-    def detect_price_manipulation(self) -> List[Dict]:
+    def detect_price_manipulation(self) -> list[dict]:
         """
         Flag tenders whose awarded value is significantly above the median for
         the same ATECO sector, suggesting inflated pricing.
@@ -552,7 +578,7 @@ class FraudPatternLibrary:
         ``FRAUD_PRICE_MIN_SECTOR_SAMPLES`` tenders in the same sector.
         """
         logger.info("[ Fraud ] Running: Price Manipulation (z-score) detector...")
-        detections: List[Dict] = []
+        detections: list[dict] = []
 
         results = self.conn.run_query(
             """
@@ -592,13 +618,13 @@ class FraudPatternLibrary:
 
         for row in results:
             evidence = {
-                "sector":       row["sector"],
-                "cig":          row["cig"],
-                "importo_eur":  row["importo"],
-                "sector_mean":  round(row["mean_val"], 2),
-                "sector_std":   round(row["std_val"], 2),
-                "z_score":      round(row["z_score"], 3),
-                "company":      row["company_name"],
+                "sector": row["sector"],
+                "cig": row["cig"],
+                "importo_eur": row["importo"],
+                "sector_mean": round(row["mean_val"], 2),
+                "sector_std": round(row["std_val"], 2),
+                "z_score": round(row["z_score"], 3),
+                "company": row["company_name"],
             }
             severity = "critical" if row["z_score"] > 4.0 else "high"
 
@@ -615,7 +641,7 @@ class FraudPatternLibrary:
             )
 
             for entity_id, label in [
-                (row["tender_id"],  "Tender"),
+                (row["tender_id"], "Tender"),
                 (row["company_id"], "Company"),
             ]:
                 self._link_entity_to_pattern(
@@ -632,9 +658,15 @@ class FraudPatternLibrary:
                 {"tid": row["tender_id"]},
             )
 
-            detections.append({"pattern": "price_manipulation", "cig": row["cig"],
-                                "z_score": round(row["z_score"], 2), "sector": row["sector"],
-                                "pattern_id": pattern_id})
+            detections.append(
+                {
+                    "pattern": "price_manipulation",
+                    "cig": row["cig"],
+                    "z_score": round(row["z_score"], 2),
+                    "sector": row["sector"],
+                    "pattern_id": pattern_id,
+                }
+            )
 
         logger.info(f"[ Fraud ] Price Manipulation: {len(detections)} tender(s) flagged.")
         return detections
@@ -643,7 +675,7 @@ class FraudPatternLibrary:
     # 6. UBO / Ownership Conflict
     # ------------------------------------------------------------------
 
-    def detect_ubo_conflict(self) -> List[Dict]:
+    def detect_ubo_conflict(self) -> list[dict]:
         """
         Flag tenders where winner and issuing buyer share a beneficial owner
         (up to ``FRAUD_UBO_MAX_DEPTH`` ownership levels deep).
@@ -652,7 +684,7 @@ class FraudPatternLibrary:
         are a critical integrity red flag.
         """
         logger.info("[ Fraud ] Running: UBO Conflict detector...")
-        detections: List[Dict] = []
+        detections: list[dict] = []
 
         results = self.conn.run_query(
             f"""
@@ -674,11 +706,11 @@ class FraudPatternLibrary:
 
         for row in results:
             evidence = {
-                "company":      row["company_name"],
-                "buyer":        row["buyer_name"],
+                "company": row["company_name"],
+                "buyer": row["buyer_name"],
                 "shared_entity": row["shared_name"],
-                "cig":          row["cig"],
-                "importo_eur":  row["importo"],
+                "cig": row["cig"],
+                "importo_eur": row["importo"],
             }
 
             pattern_id = self._create_fraud_pattern_node(
@@ -695,7 +727,7 @@ class FraudPatternLibrary:
 
             for entity_id, label in [
                 (row["company_id"], "Company"),
-                (row["tender_id"],  "Tender"),
+                (row["tender_id"], "Tender"),
             ]:
                 self._link_entity_to_pattern(
                     entity_id=entity_id,
@@ -707,9 +739,15 @@ class FraudPatternLibrary:
 
             self._bump_entity_risk_score(row["company_id"], "Company", "critical")
 
-            detections.append({"pattern": "ubo_conflict", "company": row["company_name"],
-                                "buyer": row["buyer_name"], "cig": row["cig"],
-                                "pattern_id": pattern_id})
+            detections.append(
+                {
+                    "pattern": "ubo_conflict",
+                    "company": row["company_name"],
+                    "buyer": row["buyer_name"],
+                    "cig": row["cig"],
+                    "pattern_id": pattern_id,
+                }
+            )
 
         logger.info(f"[ Fraud ] UBO Conflict: {len(detections)} case(s) flagged.")
         return detections
@@ -718,7 +756,7 @@ class FraudPatternLibrary:
     # 7. Winner-Loser Collusion Ring
     # ------------------------------------------------------------------
 
-    def detect_winner_loser_ring(self) -> List[Dict]:
+    def detect_winner_loser_ring(self) -> list[dict]:
         """
         Flag recurring (winner, loser-community-peer) pairs across tenders of
         the same buyer.
@@ -728,7 +766,7 @@ class FraudPatternLibrary:
         always winning and the others always absent from winners.
         """
         logger.info("[ Fraud ] Running: Winner-Loser Ring detector...")
-        detections: List[Dict] = []
+        detections: list[dict] = []
 
         results = self.conn.run_query(
             """
@@ -755,9 +793,9 @@ class FraudPatternLibrary:
 
         for row in results:
             evidence = {
-                "winner":         row["winner_name"],
-                "loser_peer":     row["peer_name"],
-                "buyer":          row["buyer_name"],
+                "winner": row["winner_name"],
+                "loser_peer": row["peer_name"],
+                "buyer": row["buyer_name"],
                 "co_appearances": row["co_appearances"],
             }
 
@@ -784,9 +822,15 @@ class FraudPatternLibrary:
                 )
                 self._bump_entity_risk_score(entity_id, "Company", "high")
 
-            detections.append({"pattern": "winner_loser_ring", "winner": row["winner_name"],
-                                "peer": row["peer_name"], "appearances": row["co_appearances"],
-                                "pattern_id": pattern_id})
+            detections.append(
+                {
+                    "pattern": "winner_loser_ring",
+                    "winner": row["winner_name"],
+                    "peer": row["peer_name"],
+                    "appearances": row["co_appearances"],
+                    "pattern_id": pattern_id,
+                }
+            )
 
         logger.info(f"[ Fraud ] Winner-Loser Ring: {len(detections)} pair(s) flagged.")
         return detections
@@ -795,7 +839,7 @@ class FraudPatternLibrary:
     # 8. PNRR Fund Concentration
     # ------------------------------------------------------------------
 
-    def detect_pnrr_concentration(self) -> List[Dict]:
+    def detect_pnrr_concentration(self) -> list[dict]:
         """
         Flag companies that win a disproportionately large share of EU-funded
         (PNRR, FESR, FSE) tenders relative to all companies in their region.
@@ -804,7 +848,7 @@ class FraudPatternLibrary:
         concentration signals potential favouritism or collusion with PA.
         """
         logger.info("[ Fraud ] Running: PNRR Concentration detector...")
-        detections: List[Dict] = []
+        detections: list[dict] = []
 
         results = self.conn.run_query(
             """
@@ -841,19 +885,19 @@ class FraudPatternLibrary:
             LIMIT 30
             """,
             {
-                "min_wins":  FRAUD_PNRR_MIN_WINS,
+                "min_wins": FRAUD_PNRR_MIN_WINS,
                 "min_ratio": FRAUD_PNRR_CONCENTRATION_RATIO,
             },
         )
 
         for row in results:
             evidence = {
-                "company":               row["company_name"],
-                "region":                row["region"],
-                "pnrr_wins":             row["pnrr_wins"],
-                "pnrr_value_eur":        row["pnrr_value"],
-                "regional_total":        row["regional_pnrr_total"],
-                "concentration_ratio":   round(row["concentration_ratio"], 3),
+                "company": row["company_name"],
+                "region": row["region"],
+                "pnrr_wins": row["pnrr_wins"],
+                "pnrr_value_eur": row["pnrr_value"],
+                "regional_total": row["regional_pnrr_total"],
+                "concentration_ratio": round(row["concentration_ratio"], 3),
             }
             severity = "critical" if row["concentration_ratio"] >= 0.8 else "high"
 
@@ -861,7 +905,7 @@ class FraudPatternLibrary:
                 pattern_name="pnrr_concentration",
                 severity=severity,
                 description=(
-                    f"'{row['company_name']}' holds {row['concentration_ratio']*100:.1f}% "
+                    f"'{row['company_name']}' holds {row['concentration_ratio'] * 100:.1f}% "
                     f"of EU-funded (PNRR/FESR/FSE) tender wins in region '{row['region']}' "
                     f"({row['pnrr_wins']} wins, €{row['pnrr_value']:,.2f})."
                 ),
@@ -874,14 +918,22 @@ class FraudPatternLibrary:
                 entity_label="Company",
                 pattern_id=pattern_id,
                 score=min(1.0, row["concentration_ratio"]),
-                evidence_snippet={"pnrr_wins": row["pnrr_wins"],
-                                  "concentration_ratio": round(row["concentration_ratio"], 3)},
+                evidence_snippet={
+                    "pnrr_wins": row["pnrr_wins"],
+                    "concentration_ratio": round(row["concentration_ratio"], 3),
+                },
             )
             self._bump_entity_risk_score(row["company_id"], "Company", severity)
 
-            detections.append({"pattern": "pnrr_concentration", "company": row["company_name"],
-                                "ratio": round(row["concentration_ratio"], 2),
-                                "region": row["region"], "pattern_id": pattern_id})
+            detections.append(
+                {
+                    "pattern": "pnrr_concentration",
+                    "company": row["company_name"],
+                    "ratio": round(row["concentration_ratio"], 2),
+                    "region": row["region"],
+                    "pattern_id": pattern_id,
+                }
+            )
 
         logger.info(f"[ Fraud ] PNRR Concentration: {len(detections)} company/ies flagged.")
         return detections
@@ -890,7 +942,7 @@ class FraudPatternLibrary:
     # 9. Community Monopoly
     # ------------------------------------------------------------------
 
-    def detect_community_monopoly(self) -> List[Dict]:
+    def detect_community_monopoly(self) -> list[dict]:
         """
         Flag Louvain communities where a single company controls an
         outsized share of total tender spend.
@@ -899,7 +951,7 @@ class FraudPatternLibrary:
         indicates barrier-to-entry behaviour or market carving.
         """
         logger.info("[ Fraud ] Running: Community Monopoly detector...")
-        detections: List[Dict] = []
+        detections: list[dict] = []
 
         results = self.conn.run_query(
             """
@@ -931,25 +983,25 @@ class FraudPatternLibrary:
             """,
             {
                 "monopoly_ratio": FRAUD_COMMUNITY_MONOPOLY_RATIO,
-                "min_tenders":    FRAUD_COMMUNITY_MIN_TENDERS,
+                "min_tenders": FRAUD_COMMUNITY_MIN_TENDERS,
             },
         )
 
         for row in results:
             evidence = {
-                "community_id":    row["community"],
-                "company":         row["company_name"],
-                "company_wins":    row["wins"],
-                "company_value":   row["company_value"],
+                "community_id": row["community"],
+                "company": row["company_name"],
+                "company_wins": row["wins"],
+                "company_value": row["company_value"],
                 "community_total": row["community_total"],
-                "share":           round(row["share"], 3),
+                "share": round(row["share"], 3),
             }
 
             pattern_id = self._create_fraud_pattern_node(
                 pattern_name="community_monopoly",
                 severity="high",
                 description=(
-                    f"'{row['company_name']}' controls {row['share']*100:.1f}% of spend in "
+                    f"'{row['company_name']}' controls {row['share'] * 100:.1f}% of spend in "
                     f"Louvain community #{row['community']} "
                     f"(€{row['company_value']:,.2f} of €{row['community_total']:,.2f} total)."
                 ),
@@ -966,9 +1018,15 @@ class FraudPatternLibrary:
             )
             self._bump_entity_risk_score(row["company_id"], "Company", "high")
 
-            detections.append({"pattern": "community_monopoly", "company": row["company_name"],
-                                "community": row["community"],
-                                "share": round(row["share"], 2), "pattern_id": pattern_id})
+            detections.append(
+                {
+                    "pattern": "community_monopoly",
+                    "company": row["company_name"],
+                    "community": row["community"],
+                    "share": round(row["share"], 2),
+                    "pattern_id": pattern_id,
+                }
+            )
 
         logger.info(f"[ Fraud ] Community Monopoly: {len(detections)} case(s) flagged.")
         return detections
@@ -977,7 +1035,7 @@ class FraudPatternLibrary:
     # 10. Dense Collusion Network (Triangle Count)
     # ------------------------------------------------------------------
 
-    def detect_network_clique(self) -> List[Dict]:
+    def detect_network_clique(self) -> list[dict]:
         """
         Flag companies whose GDS triangle count suggests participation in a
         dense collusion sub-graph.
@@ -988,7 +1046,7 @@ class FraudPatternLibrary:
         Requires GDS to have already written ``triangle_count``.
         """
         logger.info("[ Fraud ] Running: Dense Collusion Network (Triangle) detector...")
-        detections: List[Dict] = []
+        detections: list[dict] = []
 
         results = self.conn.run_query(
             """
@@ -1008,10 +1066,10 @@ class FraudPatternLibrary:
 
         for row in results:
             evidence = {
-                "company":         row["company_name"],
-                "triangle_count":  row["triangles"],
-                "community_id":    row["community"],
-                "current_risk":    row["current_risk"],
+                "company": row["company_name"],
+                "triangle_count": row["triangles"],
+                "community_id": row["community"],
+                "current_risk": row["current_risk"],
             }
 
             pattern_id = self._create_fraud_pattern_node(
@@ -1035,8 +1093,14 @@ class FraudPatternLibrary:
             )
             self._bump_entity_risk_score(row["company_id"], "Company", "high")
 
-            detections.append({"pattern": "network_clique", "company": row["company_name"],
-                                "triangles": row["triangles"], "pattern_id": pattern_id})
+            detections.append(
+                {
+                    "pattern": "network_clique",
+                    "company": row["company_name"],
+                    "triangles": row["triangles"],
+                    "pattern_id": pattern_id,
+                }
+            )
 
         logger.info(f"[ Fraud ] Network Clique: {len(detections)} company/ies flagged.")
         return detections
@@ -1047,7 +1111,7 @@ class FraudPatternLibrary:
     # 11. Carousel Fraud (supply-chain cycles)
     # ------------------------------------------------------------------
 
-    def detect_carousel_fraud(self) -> List[Dict]:
+    def detect_carousel_fraud(self) -> list[dict]:
         """
         Flag supply-chain cycles: A subcontracts B which subcontracts C … which
         subcontracts A.  Money flows in a circle, inflating invoices and
@@ -1066,9 +1130,7 @@ class FraudPatternLibrary:
         logger.info("[ Fraud ] Running: Carousel Fraud detector…")
 
         # ── Check whether supply-chain data exists ──────────────────────────
-        check = self.conn.run_query(
-            "MATCH ()-[r:SUBCONTRACTS_TO]->() RETURN count(r) AS n LIMIT 1"
-        )
+        check = self.conn.run_query("MATCH ()-[r:SUBCONTRACTS_TO]->() RETURN count(r) AS n LIMIT 1")
         if not check or check[0]["n"] == 0:
             logger.warning(
                 "[ Fraud ] No SUBCONTRACTS_TO edges found — carousel detector skipped.\n"
@@ -1112,14 +1174,14 @@ class FraudPatternLibrary:
                 """
             )
 
-        detections: List[Dict] = []
+        detections: list[dict] = []
         for row in results:
             evidence = {
-                "scc_id":       row.get("scc_id"),
-                "cycle_ids":    row["cycle_ids"],
-                "cycle_names":  row["cycle_names"],
+                "scc_id": row.get("scc_id"),
+                "cycle_ids": row["cycle_ids"],
+                "cycle_names": row["cycle_names"],
                 "cycle_length": row["cycle_length"],
-                "cigs":         row["cigs"],
+                "cigs": row["cigs"],
             }
             pattern_id = self._create_fraud_pattern_node(
                 pattern_name="carousel_fraud",
@@ -1137,13 +1199,15 @@ class FraudPatternLibrary:
                 self._link_entity_to_pattern(cid, "Company", pattern_id, 0.95, evidence)
                 self._bump_entity_risk_score(cid, "Company", "critical")
 
-            detections.append({
-                "pattern":      "carousel_fraud",
-                "cycle_length": row["cycle_length"],
-                "cycle_names":  row["cycle_names"],
-                "cigs":         row["cigs"],
-                "pattern_id":   pattern_id,
-            })
+            detections.append(
+                {
+                    "pattern": "carousel_fraud",
+                    "cycle_length": row["cycle_length"],
+                    "cycle_names": row["cycle_names"],
+                    "cigs": row["cigs"],
+                    "pattern_id": pattern_id,
+                }
+            )
 
         logger.info(f"[ Fraud ] Carousel fraud: {len(detections)} cycle(s) found")
         return detections
@@ -1152,7 +1216,7 @@ class FraudPatternLibrary:
     # 12. Board Overlap Collusion
     # ------------------------------------------------------------------
 
-    def detect_board_overlap_collusion(self) -> List[Dict]:
+    def detect_board_overlap_collusion(self) -> list[dict]:
         """
         Flag company pairs that share ≥ BOARD_OVERLAP_MIN_SHARED board members
         AND have both won tenders from the same buyer.
@@ -1167,9 +1231,7 @@ class FraudPatternLibrary:
         """
         logger.info("[ Fraud ] Running: Board Overlap Collusion detector…")
 
-        check = self.conn.run_query(
-            "MATCH ()-[r:REPRESENTS]->() RETURN count(r) AS n LIMIT 1"
-        )
+        check = self.conn.run_query("MATCH ()-[r:REPRESENTS]->() RETURN count(r) AS n LIMIT 1")
         if not check or check[0]["n"] == 0:
             logger.warning(
                 "[ Fraud ] No REPRESENTS edges found — board overlap detector skipped.\n"
@@ -1207,13 +1269,13 @@ class FraudPatternLibrary:
             {"min_shared": BOARD_OVERLAP_MIN_SHARED},
         )
 
-        detections: List[Dict] = []
+        detections: list[dict] = []
         for row in results:
             evidence = {
-                "company1":      row["company1_name"],
-                "company2":      row["company2_name"],
-                "buyer":         row["buyer_name"],
-                "shared_count":  row["shared_count"],
+                "company1": row["company1_name"],
+                "company2": row["company2_name"],
+                "buyer": row["buyer_name"],
+                "shared_count": row["shared_count"],
                 "shared_persons": row["shared_names"],
             }
             pattern_id = self._create_fraud_pattern_node(
@@ -1232,15 +1294,17 @@ class FraudPatternLibrary:
                 self._link_entity_to_pattern(cid, "Company", pattern_id, 0.75, evidence)
                 self._bump_entity_risk_score(cid, "Company", "high")
 
-            detections.append({
-                "pattern":       "board_overlap_collusion",
-                "company1":      row["company1_name"],
-                "company2":      row["company2_name"],
-                "buyer":         row["buyer_name"],
-                "shared_count":  row["shared_count"],
-                "shared_persons": row["shared_names"],
-                "pattern_id":    pattern_id,
-            })
+            detections.append(
+                {
+                    "pattern": "board_overlap_collusion",
+                    "company1": row["company1_name"],
+                    "company2": row["company2_name"],
+                    "buyer": row["buyer_name"],
+                    "shared_count": row["shared_count"],
+                    "shared_persons": row["shared_names"],
+                    "pattern_id": pattern_id,
+                }
+            )
 
         logger.info(f"[ Fraud ] Board overlap collusion: {len(detections)} pair(s) found")
         return detections
@@ -1249,7 +1313,7 @@ class FraudPatternLibrary:
     # 13. Subcontractor Concentration
     # ------------------------------------------------------------------
 
-    def detect_subcontractor_concentration(self) -> List[Dict]:
+    def detect_subcontractor_concentration(self) -> list[dict]:
         """
         Flag winners that route the vast majority of their PNRR subcontracts
         to a single company (concentration ratio > SUBCONTRACTOR_CONCENTRATION_MAX).
@@ -1264,9 +1328,7 @@ class FraudPatternLibrary:
         """
         logger.info("[ Fraud ] Running: Subcontractor Concentration detector…")
 
-        check = self.conn.run_query(
-            "MATCH ()-[r:SUBCONTRACTS_TO]->() RETURN count(r) AS n LIMIT 1"
-        )
+        check = self.conn.run_query("MATCH ()-[r:SUBCONTRACTS_TO]->() RETURN count(r) AS n LIMIT 1")
         if not check or check[0]["n"] == 0:
             logger.warning(
                 "[ Fraud ] No SUBCONTRACTS_TO edges found — subcontractor concentration "
@@ -1332,14 +1394,14 @@ class FraudPatternLibrary:
                 {"threshold": SUBCONTRACTOR_CONCENTRATION_MAX},
             )
 
-        detections: List[Dict] = []
+        detections: list[dict] = []
         for row in results:
             evidence = {
-                "winner":               row["winner_name"],
-                "sub":                  row["sub_name"],
-                "pair_count":           row["pair_count"],
-                "concentration_ratio":  round(row["concentration_ratio"], 3),
-                "cigs":                 row["cigs"][:10],
+                "winner": row["winner_name"],
+                "sub": row["sub_name"],
+                "pair_count": row["pair_count"],
+                "concentration_ratio": round(row["concentration_ratio"], 3),
+                "cigs": row["cigs"][:10],
             }
             pattern_id = self._create_fraud_pattern_node(
                 pattern_name="subcontractor_concentration",
@@ -1356,14 +1418,16 @@ class FraudPatternLibrary:
                 self._link_entity_to_pattern(cid, "Company", pattern_id, 0.80, evidence)
                 self._bump_entity_risk_score(cid, "Company", "high")
 
-            detections.append({
-                "pattern":             "subcontractor_concentration",
-                "winner":              row["winner_name"],
-                "sub":                 row["sub_name"],
-                "pair_count":          row["pair_count"],
-                "concentration_ratio": row["concentration_ratio"],
-                "pattern_id":          pattern_id,
-            })
+            detections.append(
+                {
+                    "pattern": "subcontractor_concentration",
+                    "winner": row["winner_name"],
+                    "sub": row["sub_name"],
+                    "pair_count": row["pair_count"],
+                    "concentration_ratio": row["concentration_ratio"],
+                    "pattern_id": pattern_id,
+                }
+            )
 
         logger.info(f"[ Fraud ] Subcontractor concentration: {len(detections)} finding(s)")
         return detections
@@ -1404,9 +1468,9 @@ class FraudPatternLibrary:
         from paladino.constants import SHELL_SCORE_FLAG_THRESHOLD
 
         threshold = flag_threshold if flag_threshold is not None else SHELL_SCORE_FLAG_THRESHOLD
-        detector  = ShellCompanyDetector(self.conn.driver)
+        detector = ShellCompanyDetector(self.conn.driver)
         all_scores = detector.score_all(limit=limit, store_results=True)
-        high_risk  = detector.get_high_risk(all_scores, threshold=threshold)
+        high_risk = detector.get_high_risk(all_scores, threshold=threshold)
 
         if not high_risk:
             logger.info("[ Fraud ] Shell company network: no HIGH_RISK companies found")
@@ -1463,7 +1527,7 @@ class FraudPatternLibrary:
 
         # Look up score objects by CF
         score_map = {s.company_id: s for s in high_risk}
-        name_map  = {r["cf"]: r["name"] for r in rows}
+        name_map = {r["cf"]: r["name"] for r in rows}
 
         detections: list[dict] = []
         for root, cf_list in groups.items():
@@ -1471,7 +1535,7 @@ class FraudPatternLibrary:
                 continue  # singleton — not a "network"
 
             max_score = max(score_map[cf].shell_score for cf in cf_list if cf in score_map)
-            severity  = "critical" if max_score >= 0.75 else "high"
+            severity = "critical" if max_score >= 0.75 else "high"
 
             names = [name_map.get(cf, cf) for cf in cf_list]
             evidence = (
@@ -1492,28 +1556,32 @@ class FraudPatternLibrary:
 
             for cf in cf_list:
                 self._link_entity_to_pattern(
-                    cf, "Company", pattern_id,
+                    cf,
+                    "Company",
+                    pattern_id,
                     score_map[cf].shell_score if cf in score_map else 0.5,
                     evidence,
                 )
                 self._bump_entity_risk_score(cf, "Company", severity)
 
-            detections.append({
-                "pattern":    "shell_company_network",
-                "cluster_cfs": cf_list,
-                "cluster_names": names,
-                "size":       len(cf_list),
-                "max_score":  round(max_score, 4),
-                "severity":   severity,
-                "pattern_id": pattern_id,
-            })
+            detections.append(
+                {
+                    "pattern": "shell_company_network",
+                    "cluster_cfs": cf_list,
+                    "cluster_names": names,
+                    "size": len(cf_list),
+                    "max_score": round(max_score, 4),
+                    "severity": severity,
+                    "pattern_id": pattern_id,
+                }
+            )
 
         logger.info(f"[ Fraud ] Shell company network: {len(detections)} cluster(s) detected")
         return detections
 
     # ------------------------------------------------------------------
 
-    def run_all_detectors(self) -> Dict[str, List[Dict]]:
+    def run_all_detectors(self) -> dict[str, list[dict]]:
         """
         Run all 13 detectors in sequence and return a summary dict.
 
@@ -1530,25 +1598,25 @@ class FraudPatternLibrary:
         logger.info(f"=== FraudPatternLibrary run started | run_id={self.run_id} ===")
 
         detectors = [
-            ("bid_rotation",                  self.detect_bid_rotation),
-            ("ghost_bidding",                 self.detect_ghost_bidding),
-            ("split_tendering",               self.detect_split_tendering),
-            ("short_award_window",            self.detect_short_award_window),
-            ("price_manipulation",            self.detect_price_manipulation),
-            ("ubo_conflict",                  self.detect_ubo_conflict),
-            ("winner_loser_ring",             self.detect_winner_loser_ring),
-            ("pnrr_concentration",            self.detect_pnrr_concentration),
-            ("community_monopoly",            self.detect_community_monopoly),
-            ("network_clique",               self.detect_network_clique),
+            ("bid_rotation", self.detect_bid_rotation),
+            ("ghost_bidding", self.detect_ghost_bidding),
+            ("split_tendering", self.detect_split_tendering),
+            ("short_award_window", self.detect_short_award_window),
+            ("price_manipulation", self.detect_price_manipulation),
+            ("ubo_conflict", self.detect_ubo_conflict),
+            ("winner_loser_ring", self.detect_winner_loser_ring),
+            ("pnrr_concentration", self.detect_pnrr_concentration),
+            ("community_monopoly", self.detect_community_monopoly),
+            ("network_clique", self.detect_network_clique),
             # Supply-chain detectors (require SUBCONTRACTS_TO / REPRESENTS data)
-            ("carousel_fraud",               self.detect_carousel_fraud),
-            ("board_overlap_collusion",       self.detect_board_overlap_collusion),
-            ("subcontractor_concentration",   self.detect_subcontractor_concentration),
+            ("carousel_fraud", self.detect_carousel_fraud),
+            ("board_overlap_collusion", self.detect_board_overlap_collusion),
+            ("subcontractor_concentration", self.detect_subcontractor_concentration),
             # Enhanced shell company detection (multi-factor, Phase 3.2)
-            ("shell_company_network",         self.detect_shell_company_network),
+            ("shell_company_network", self.detect_shell_company_network),
         ]
 
-        results: Dict[str, List[Dict]] = {}
+        results: dict[str, list[dict]] = {}
         total_detections = 0
 
         for name, detector in detectors:
@@ -1560,7 +1628,7 @@ class FraudPatternLibrary:
                 logger.error(f"[ Fraud ] Detector '{name}' failed: {exc}")
                 results[name] = []
 
-        elapsed = (datetime.now(timezone.utc) - self._run_started_at).total_seconds()
+        elapsed = (datetime.now(UTC) - self._run_started_at).total_seconds()
         logger.success(
             f"=== FraudPatternLibrary run complete | "
             f"{total_detections} pattern(s) detected across {len(detectors)} detectors "
@@ -1568,7 +1636,7 @@ class FraudPatternLibrary:
         )
         return results
 
-    def get_summary_stats(self) -> Dict:
+    def get_summary_stats(self) -> dict:
         """
         Return aggregate statistics for all FraudPattern nodes in the graph.
 

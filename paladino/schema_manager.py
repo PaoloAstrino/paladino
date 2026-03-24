@@ -3,71 +3,76 @@ Schema initialization and validation utilities.
 """
 
 from pathlib import Path
-from typing import List
-from neo4j import Driver
+
 from loguru import logger
+from neo4j import Driver
 
 
 class SchemaManager:
     """Manage Neo4j schema initialization and validation."""
-    
+
     def __init__(self, driver: Driver, schema_dir: Path):
         self.driver = driver
         self.schema_dir = schema_dir
-    
+
     def initialize_schema(self, vector_dimensions: int = 768):
         """Initialize the complete schema (constraints + indexes)."""
         logger.info("Initializing Neo4j schema...")
-        
+
         # Apply constraints first
         self._apply_cypher_file("constraints.cypher")
-        
+
         # Then apply indexes
         self._apply_cypher_file("indexes.cypher")
-        
+
         # Create vector indices for semantic search
         self.create_vector_indices(dimensions=vector_dimensions)
-        
+
         # New Quick Win: Full-Text Search
         self.create_fulltext_index()
-        
+
         # Track version
         self._set_schema_version(1)
-        
+
         logger.success("Schema initialization complete (Version 1)")
 
     def _set_schema_version(self, version: int):
         """Record the schema version in the database."""
         with self.driver.session() as session:
-            session.run("""
+            session.run(
+                """
                 MERGE (v:SchemaVersion {id: 'CURRENT'})
                 SET v.version = $version,
                     v.applied_at = datetime()
-            """, version=version)
+            """,
+                version=version,
+            )
 
     def get_current_version(self) -> int:
         """Get the current schema version from the database."""
         with self.driver.session() as session:
-            result = session.run("MATCH (v:SchemaVersion {id: 'CURRENT'}) RETURN v.version as version")
+            result = session.run(
+                "MATCH (v:SchemaVersion {id: 'CURRENT'}) RETURN v.version as version"
+            )
             record = result.single()
             return record["version"] if record else 0
-    
+
     def _apply_cypher_file(self, filename: str):
         """Execute a Cypher file."""
         file_path = self.schema_dir / filename
-        
+
         if not file_path.exists():
             logger.warning(f"Schema file not found: {file_path}")
             return
-        
+
         logger.info(f"Applying {filename}...")
-        
-        with open(file_path, 'r', encoding='utf-8') as f:
+
+        with open(file_path, encoding="utf-8") as f:
             content = f.read()
-        
+
         # Split by semicolon and execute each statement
         statements = self._parse_cypher_statements(content)
-        
+
         with self.driver.session() as session:
             for i, statement in enumerate(statements, 1):
                 if statement.strip():
@@ -76,29 +81,29 @@ class SchemaManager:
                         logger.debug(f"  ✓ Statement {i} executed")
                     except Exception as e:
                         logger.warning(f"  ✗ Statement {i} failed: {e}")
-    
-    def _parse_cypher_statements(self, content: str) -> List[str]:
+
+    def _parse_cypher_statements(self, content: str) -> list[str]:
         """Parse Cypher file into individual statements."""
         # Remove comments
         lines = []
-        for line in content.split('\n'):
+        for line in content.split("\n"):
             # Remove line comments
-            if '//' in line:
-                line = line[:line.index('//')]
+            if "//" in line:
+                line = line[: line.index("//")]
             lines.append(line)
-        
-        content = '\n'.join(lines)
-        
+
+        content = "\n".join(lines)
+
         # Split by semicolon
-        statements = [s.strip() for s in content.split(';') if s.strip()]
+        statements = [s.strip() for s in content.split(";") if s.strip()]
         return statements
-    
-    def list_constraints(self) -> List[dict]:
+
+    def list_constraints(self) -> list[dict]:
         """List all current constraints."""
         with self.driver.session() as session:
             return [dict(record) for record in session.run("SHOW CONSTRAINTS")]
 
-    def list_indexes(self) -> List[dict]:
+    def list_indexes(self) -> list[dict]:
         """List all current indexes."""
         with self.driver.session() as session:
             return [dict(record) for record in session.run("SHOW INDEXES")]
@@ -106,29 +111,29 @@ class SchemaManager:
     def validate_schema(self) -> bool:
         """Validate that schema is properly initialized."""
         logger.info("Validating schema...")
-        
+
         with self.driver.session() as session:
             # Check constraints
             result = session.run("SHOW CONSTRAINTS")
             constraints = list(result)
             logger.info(f"Found {len(constraints)} constraints")
-            
+
             # Check indexes
             result = session.run("SHOW INDEXES")
             indexes = list(result)
             logger.info(f"Found {len(indexes)} indexes")
-            
+
             if len(constraints) == 0:
                 logger.error("No constraints found - schema not initialized")
                 return False
-            
+
             logger.success("Schema validation passed")
             return True
-    
+
     def create_vector_indices(self, dimensions: int = 768):
         """Create vector indices for semantic search."""
         logger.info(f"Creating vector indices (dimensions: {dimensions})...")
-        
+
         queries = [
             # Project vector index
             f"""
@@ -147,13 +152,13 @@ class SchemaManager:
               `vector.dimensions`: {dimensions},
               `vector.similarity_function`: 'cosine'
             }} }}
-            """
+            """,
         ]
-        
+
         with self.driver.session() as session:
             for query in queries:
                 session.run(query)
-                
+
         logger.success("Vector indices created")
 
     def create_fulltext_index(self):
@@ -174,7 +179,7 @@ class SchemaManager:
     def get_schema_metadata(self) -> str:
         """Get a text description of the schema for LLM context."""
         logger.info("Generating schema metadata for LLM...")
-        
+
         # In a real system, you could introspect the DB
         # For this prototype, we return the expected schema
         metadata = """
@@ -214,15 +219,15 @@ class SchemaManager:
             # Drop constraints
             result = session.run("SHOW CONSTRAINTS")
             for record in result:
-                constraint_name = record.get('name')
+                constraint_name = record.get("name")
                 if constraint_name:
                     session.run("DROP CONSTRAINT $name IF EXISTS", name=constraint_name)
 
             # Drop indexes
             result = session.run("SHOW INDEXES")
             for record in result:
-                index_name = record.get('name')
-                if index_name and not index_name.startswith('constraint_'):
+                index_name = record.get("name")
+                if index_name and not index_name.startswith("constraint_"):
                     session.run("DROP INDEX $name IF EXISTS", name=index_name)
 
         logger.success("All constraints and indexes dropped")

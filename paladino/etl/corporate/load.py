@@ -14,7 +14,6 @@ from loguru import logger
 from neo4j import Driver
 from rich.console import Console
 from rich.panel import Panel
-from tqdm import tqdm
 
 _console = Console()
 
@@ -35,7 +34,7 @@ class CorporateLoader:
     """
 
     def __init__(self, driver: Driver, batch_size: int = 2_000) -> None:
-        self.driver     = driver
+        self.driver = driver
         self.batch_size = batch_size
 
     # ── public methods ───────────────────────────────────────────────────────
@@ -55,7 +54,8 @@ class CorporateLoader:
 
         with self.driver.session() as session:
             for batch in self._iter_batches(df):
-                result = session.run("""
+                result = session.run(
+                    """
                     UNWIND $rows AS row
                     MERGE (p:Person {cf: row.cf})
                     ON CREATE SET
@@ -70,7 +70,9 @@ class CorporateLoader:
                         p.cognome = CASE WHEN p.cognome IS NULL THEN row.cognome ELSE p.cognome END,
                         p.source  = apoc.coll.toSet(coalesce(p.source, []) + row.source)
                     RETURN count(p) AS loaded
-                """, rows=batch)
+                """,
+                    rows=batch,
+                )
                 total += result.single()["loaded"]
 
         logger.info(f"  ↳ {total:,} Person nodes upserted")
@@ -88,12 +90,13 @@ class CorporateLoader:
             return 0
 
         logger.info(f"Loading {len(df):,} REPRESENTS edges…")
-        total   = 0
+        total = 0
         skipped = 0
 
         with self.driver.session() as session:
             for batch in self._iter_batches(df):
-                result = session.run("""
+                result = session.run(
+                    """
                     UNWIND $rows AS row
                     MATCH (c:Company {cf: row.company_cf})
                     MERGE (p:Person {cf: row.person_cf})
@@ -106,9 +109,11 @@ class CorporateLoader:
                     RETURN
                         count(r)                                        AS linked,
                         count(CASE WHEN c IS NULL THEN 1 END)          AS skipped
-                """, rows=batch)
-                rec      = result.single()
-                total   += rec["linked"]
+                """,
+                    rows=batch,
+                )
+                rec = result.single()
+                total += rec["linked"]
                 skipped += rec["skipped"]
 
         if skipped:
@@ -133,13 +138,14 @@ class CorporateLoader:
             return 0
 
         logger.info(f"Loading {len(df):,} SHAREHOLDER_OF edges…")
-        total   = 0
+        total = 0
         skipped = 0
 
         with self.driver.session() as session:
             # ── Step A: SHAREHOLDER_OF ───────────────────────────────────────
             for batch in self._iter_batches(df):
-                result = session.run("""
+                result = session.run(
+                    """
                     UNWIND $rows AS row
                     MATCH (target:Company {cf: row.company_cf})
                     // The shareholder can be a Person OR another Company
@@ -153,9 +159,11 @@ class CorporateLoader:
                     RETURN
                         count(r)                                            AS linked,
                         count(CASE WHEN target IS NULL THEN 1 END)         AS skipped
-                """, rows=batch)
-                rec      = result.single()
-                total   += rec["linked"]
+                """,
+                    rows=batch,
+                )
+                rec = result.single()
+                total += rec["linked"]
                 skipped += rec["skipped"]
 
             # ── Step B: derive SHARES_UBO between Companies ──────────────────
@@ -194,8 +202,8 @@ class CorporateLoader:
 
     def load_all(
         self,
-        persons_df:      pl.DataFrame,
-        represents_df:   pl.DataFrame,
+        persons_df: pl.DataFrame,
+        represents_df: pl.DataFrame,
         shareholding_df: pl.DataFrame,
     ) -> dict[str, int]:
         """
@@ -207,24 +215,26 @@ class CorporateLoader:
           represents second → board-member links
           shareholdings last → derives SHARES_UBO after all persons exist
         """
-        persons_loaded      = self.load_persons(persons_df)
-        represents_loaded   = self.load_represents(represents_df)
+        persons_loaded = self.load_persons(persons_df)
+        represents_loaded = self.load_represents(represents_df)
         shareholdings_loaded = self.load_shareholdings(shareholding_df)
 
         summary = {
-            "persons":      persons_loaded,
-            "represents":   represents_loaded,
+            "persons": persons_loaded,
+            "represents": represents_loaded,
             "shareholdings": shareholdings_loaded,
         }
 
-        _console.print(Panel(
-            "\n".join(
-                f"  [cyan]{k:20s}[/cyan]  [bold green]{v:>8,}[/bold green]  rows loaded"
-                for k, v in summary.items()
-            ),
-            title="[bold]Corporate ETL — Load Complete[/bold]",
-            border_style="green",
-            expand=False,
-        ))
+        _console.print(
+            Panel(
+                "\n".join(
+                    f"  [cyan]{k:20s}[/cyan]  [bold green]{v:>8,}[/bold green]  rows loaded"
+                    for k, v in summary.items()
+                ),
+                title="[bold]Corporate ETL — Load Complete[/bold]",
+                border_style="green",
+                expand=False,
+            )
+        )
 
         return summary

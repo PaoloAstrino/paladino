@@ -3,18 +3,20 @@ Neo4j database connection and utilities.
 """
 
 import logging
-from typing import Optional, Dict, Any, List
-from neo4j import GraphDatabase, Driver
-from neo4j.exceptions import AuthError, ServiceUnavailable, DatabaseUnavailable, DriverError
+from typing import Any
+
+from loguru import logger
+from neo4j import Driver, GraphDatabase
+from neo4j.exceptions import AuthError, DatabaseUnavailable, DriverError, ServiceUnavailable
 from pydantic_settings import BaseSettings
+
 from paladino.config import settings
 from paladino.errors import (
-    neo4j_offline_error,
-    neo4j_auth_error,
-    neo4j_timeout_error,
     DatabaseError,
+    neo4j_auth_error,
+    neo4j_offline_error,
+    neo4j_timeout_error,
 )
-from loguru import logger
 
 # Suppress "Received notification from DBMS server" spam (property doesn't exist, etc.)
 # These are advisory WARN-level messages from the Neo4j driver's notification system.
@@ -37,9 +39,9 @@ class Neo4jSettings(BaseSettings):
 class Neo4jConnection:
     """Neo4j database connection manager."""
 
-    def __init__(self, settings: Optional[Neo4jSettings] = None):
+    def __init__(self, settings: Neo4jSettings | None = None):
         self.settings = settings or Neo4jSettings()
-        self._driver: Optional[Driver] = None
+        self._driver: Driver | None = None
 
     def connect(self) -> Driver:
         """Establish connection to Neo4j.
@@ -98,7 +100,13 @@ class Neo4jConnection:
                 hint="Check that your NEO4J_URI is correct and Neo4j is running.",
             ) from e
 
-    def execute_batch(self, query: str, data: List[Dict[str, Any]], batch_size: int = 5000, source_tag: str = "default") -> None:
+    def execute_batch(
+        self,
+        query: str,
+        data: list[dict[str, Any]],
+        batch_size: int = 5000,
+        source_tag: str = "default",
+    ) -> None:
         """Execute a Cypher query in batches with checkpointing.
 
         Failed batches are marked FAILED in the graph so they can be retried.
@@ -109,21 +117,25 @@ class Neo4jConnection:
         total = len(data)
 
         for i in range(0, total, batch_size):
-            batch = data[i:i + batch_size]
+            batch = data[i : i + batch_size]
             # Generate a unique ID for this batch to check if it was already processed
             batch_content_hash = hashlib.md5(str(batch).encode()).hexdigest()
             batch_id = f"{source_tag}_{i}_{batch_content_hash}"
 
             # Atomically claim the batch (avoids race condition)
             if not self._claim_batch(batch_id, source_tag):
-                logger.debug(f"  Skipping batch {i // batch_size + 1} (already processed or claimed).")
+                logger.debug(
+                    f"  Skipping batch {i // batch_size + 1} (already processed or claimed)."
+                )
                 continue
 
             try:
                 with driver.session() as session:
                     session.run(query, batch=batch)
                 self.mark_batch_completed(batch_id, len(batch))
-                logger.debug(f"  Processed batch {i // batch_size + 1} ({min(i + batch_size, total)}/{total})")
+                logger.debug(
+                    f"  Processed batch {i // batch_size + 1} ({min(i + batch_size, total)}/{total})"
+                )
             except AuthError as e:
                 raise neo4j_auth_error(e) from e
             except (ServiceUnavailable, DatabaseUnavailable, DriverError) as e:
@@ -204,9 +216,11 @@ class Neo4jConnection:
             return True
         # Batch already existed - check if it's completed
         status = result[0].get("status")
-        return status != 'COMPLETED'
+        return status != "COMPLETED"
 
-    def run_query(self, query: str, parameters: Optional[Dict[str, Any]] = None, timeout: Optional[float] = None):
+    def run_query(
+        self, query: str, parameters: dict[str, Any] | None = None, timeout: float | None = None
+    ):
         """Execute a single Cypher query and return results.
 
         Args:
@@ -220,6 +234,7 @@ class Neo4jConnection:
             DatabaseError: Other Neo4j errors.
         """
         import neo4j.exceptions as _nx
+
         driver = self.connect()
         try:
             with driver.session() as session:
@@ -232,7 +247,7 @@ class Neo4jConnection:
         except _nx.ClientError as e:
             # e.g. syntax error – re-raise as DatabaseError with helpful hint
             raise DatabaseError(
-                message=f"Cypher client error",
+                message="Cypher client error",
                 hint="Review the query syntax and property names.",
             ) from e
         except Exception as e:
@@ -241,8 +256,10 @@ class Neo4jConnection:
             if "timeout" in error_str:
                 raise neo4j_timeout_error(query=query, original=e) from e
             # SECURITY FIX (SEC-013): Don't leak query details in error
-            logger.error(f"Query execution failed")
-            raise DatabaseError(message="Query execution failed", hint="Check query syntax and parameters") from e
+            logger.error("Query execution failed")
+            raise DatabaseError(
+                message="Query execution failed", hint="Check query syntax and parameters"
+            ) from e
 
     def __enter__(self):
         return self.connect()
@@ -255,6 +272,7 @@ def get_driver() -> Driver:
     """Get a Neo4j driver instance."""
     conn = Neo4jConnection()
     return conn.connect()
+
 
 def execute_batch(query: str, data: list, batch_size: int = 5000):
     """Global helper for batch execution."""

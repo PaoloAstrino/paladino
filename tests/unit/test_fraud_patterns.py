@@ -6,15 +6,16 @@ Each detector is tested with synthetic rows that should trigger a detection,
 then with empty rows that should produce no output.
 """
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock
+
 import pytest
 
 from paladino.analytics.fraud_patterns import FraudPatternLibrary
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def make_library(query_side_effect=None):
     """Build a FraudPatternLibrary with a mocked connection."""
@@ -31,6 +32,7 @@ def make_library(query_side_effect=None):
 # ---------------------------------------------------------------------------
 # _create_fraud_pattern_node
 # ---------------------------------------------------------------------------
+
 
 class TestCreateFraudPatternNode:
     def test_returns_uuid_string(self):
@@ -68,6 +70,7 @@ class TestCreateFraudPatternNode:
 # _link_entity_to_pattern
 # ---------------------------------------------------------------------------
 
+
 class TestLinkEntityToPattern:
     def test_score_is_clamped_below_zero(self):
         lib, conn = make_library()
@@ -92,6 +95,7 @@ class TestLinkEntityToPattern:
 # _bump_entity_risk_score
 # ---------------------------------------------------------------------------
 
+
 class TestBumpEntityRiskScore:
     def test_delta_passed_for_critical(self):
         lib, conn = make_library()
@@ -110,6 +114,7 @@ class TestBumpEntityRiskScore:
 # detect_bid_rotation
 # ---------------------------------------------------------------------------
 
+
 class TestDetectBidRotation:
     def test_no_findings_returns_empty(self):
         lib, conn = make_library()
@@ -119,16 +124,17 @@ class TestDetectBidRotation:
     def test_one_finding_creates_pattern_and_links(self):
         rotation_group = [
             {"company_id": "c1", "company_name": "Alpha SRL", "wins": 5, "sample_tenders": []},
-            {"company_id": "c2", "company_name": "Beta SRL",  "wins": 4, "sample_tenders": []},
+            {"company_id": "c2", "company_name": "Beta SRL", "wins": 4, "sample_tenders": []},
         ]
         row = {
-            "buyer_id":       "b1",
-            "buyer_name":     "Comune di Roma",
+            "buyer_id": "b1",
+            "buyer_name": "Comune di Roma",
             "rotation_group": rotation_group,
-            "total_wins":     9,
+            "total_wins": 9,
         }
 
         call_count = 0
+
         def side_effect(query, params=None):
             nonlocal call_count
             call_count += 1
@@ -152,6 +158,7 @@ class TestDetectBidRotation:
 # detect_ghost_bidding
 # ---------------------------------------------------------------------------
 
+
 class TestDetectGhostBidding:
     def test_no_findings_returns_empty(self):
         lib, conn = make_library()
@@ -160,13 +167,14 @@ class TestDetectGhostBidding:
 
     def test_finding_has_correct_pattern_name(self):
         row = {
-            "ghost_id":          "g1",
-            "ghost_name":        "Ghost SRL",
-            "community":         42,
+            "ghost_id": "g1",
+            "ghost_name": "Ghost SRL",
+            "community": 42,
             "community_tenders": 10,
-            "winner_samples":    ["w1", "w2"],
+            "winner_samples": ["w1", "w2"],
         }
         call_count = 0
+
         def side_effect(query, params=None):
             nonlocal call_count
             call_count += 1
@@ -182,18 +190,20 @@ class TestDetectGhostBidding:
 # detect_split_tendering
 # ---------------------------------------------------------------------------
 
+
 class TestDetectSplitTendering:
     def test_finding_links_buyer_and_company(self):
         row = {
-            "buyer_id":     "b1",
-            "buyer_name":   "Consorzio Nord",
-            "company_id":   "c1",
+            "buyer_id": "b1",
+            "buyer_name": "Consorzio Nord",
+            "company_id": "c1",
             "company_name": "Costruzioni SPA",
             "tender_count": 5,
-            "total_value":  150_000.0,
+            "total_value": 150_000.0,
             "sample_tenders": ["t1", "t2"],
         }
         call_count = 0
+
         def side_effect(query, params=None):
             nonlocal call_count
             call_count += 1
@@ -209,20 +219,22 @@ class TestDetectSplitTendering:
 # detect_short_award_window
 # ---------------------------------------------------------------------------
 
+
 class TestDetectShortAwardWindow:
     def test_critical_severity_for_zero_days(self):
         row = {
-            "tender_id":    "t1",
-            "cig":          "Z000000001",
-            "oggetto":      "Lavori strade",
-            "importo":      200_000.0,
-            "company_id":   "c1",
+            "tender_id": "t1",
+            "cig": "Z000000001",
+            "oggetto": "Lavori strade",
+            "importo": 200_000.0,
+            "company_id": "c1",
             "company_name": "Fast SRL",
-            "buyer_id":     "b1",
-            "buyer_name":   "PA Test",
-            "award_days":   0,
+            "buyer_id": "b1",
+            "buyer_name": "PA Test",
+            "award_days": 0,
         }
         call_count = 0
+
         def side_effect(query, params=None):
             nonlocal call_count
             call_count += 1
@@ -237,11 +249,18 @@ class TestDetectShortAwardWindow:
 
     def test_high_severity_for_five_days(self):
         row = {
-            "tender_id": "t2", "cig": "Z000000002", "oggetto": "Forniture", "importo": 50_000.0,
-            "company_id": "c2", "company_name": "Quick SRL", "buyer_id": "b2",
-            "buyer_name": "PA Nord", "award_days": 5,
+            "tender_id": "t2",
+            "cig": "Z000000002",
+            "oggetto": "Forniture",
+            "importo": 50_000.0,
+            "company_id": "c2",
+            "company_name": "Quick SRL",
+            "buyer_id": "b2",
+            "buyer_name": "PA Nord",
+            "award_days": 5,
         }
         call_count = 0
+
         def side_effect(query, params=None):
             nonlocal call_count
             call_count += 1
@@ -256,20 +275,22 @@ class TestDetectShortAwardWindow:
 # detect_price_manipulation
 # ---------------------------------------------------------------------------
 
+
 class TestDetectPriceManipulation:
     def test_finding_stores_z_score(self):
         row = {
-            "sector":       "62.01",
-            "tender_id":    "t1",
-            "cig":          "ZABC123",
-            "importo":      5_000_000.0,
-            "company_id":   "c1",
+            "sector": "62.01",
+            "tender_id": "t1",
+            "cig": "ZABC123",
+            "importo": 5_000_000.0,
+            "company_id": "c1",
             "company_name": "Inflated SRL",
-            "mean_val":     100_000.0,
-            "std_val":      50_000.0,
-            "z_score":      3.2,
+            "mean_val": 100_000.0,
+            "std_val": 50_000.0,
+            "z_score": 3.2,
         }
         call_count = 0
+
         def side_effect(query, params=None):
             nonlocal call_count
             call_count += 1
@@ -285,20 +306,22 @@ class TestDetectPriceManipulation:
 # detect_ubo_conflict
 # ---------------------------------------------------------------------------
 
+
 class TestDetectUboConflict:
     def test_finding_severity_is_critical(self):
         row = {
-            "company_id":      "c1",
-            "company_name":    "Shell SRL",
-            "buyer_id":        "b1",
-            "buyer_name":      "PA Corrupt",
+            "company_id": "c1",
+            "company_name": "Shell SRL",
+            "buyer_id": "b1",
+            "buyer_name": "PA Corrupt",
             "shared_entity_id": "se1",
-            "shared_name":     "Owner SpA",
-            "tender_id":       "t1",
-            "cig":             "ZUBC001",
-            "importo":         1_000_000.0,
+            "shared_name": "Owner SpA",
+            "tender_id": "t1",
+            "cig": "ZUBC001",
+            "importo": 1_000_000.0,
         }
         call_count = 0
+
         def side_effect(query, params=None):
             nonlocal call_count
             call_count += 1
@@ -316,18 +339,20 @@ class TestDetectUboConflict:
 # detect_winner_loser_ring
 # ---------------------------------------------------------------------------
 
+
 class TestDetectWinnerLoserRing:
     def test_both_entities_linked(self):
         row = {
-            "winner_id":      "w1",
-            "winner_name":    "Winner SRL",
-            "peer_id":        "p1",
-            "peer_name":      "Loser SPA",
-            "buyer_id":       "b1",
-            "buyer_name":     "Municipality X",
+            "winner_id": "w1",
+            "winner_name": "Winner SRL",
+            "peer_id": "p1",
+            "peer_name": "Loser SPA",
+            "buyer_id": "b1",
+            "buyer_name": "Municipality X",
             "co_appearances": 6,
         }
         call_count = 0
+
         def side_effect(query, params=None):
             nonlocal call_count
             call_count += 1
@@ -344,18 +369,20 @@ class TestDetectWinnerLoserRing:
 # detect_pnrr_concentration
 # ---------------------------------------------------------------------------
 
+
 class TestDetectPnrrConcentration:
     def test_high_concentration_triggers_finding(self):
         row = {
-            "company_id":            "c1",
-            "company_name":          "PNRR King SRL",
-            "region":                "Sicilia",
-            "pnrr_wins":             8,
-            "pnrr_value":            4_000_000.0,
-            "regional_pnrr_total":   10,
-            "concentration_ratio":   0.8,
+            "company_id": "c1",
+            "company_name": "PNRR King SRL",
+            "region": "Sicilia",
+            "pnrr_wins": 8,
+            "pnrr_value": 4_000_000.0,
+            "regional_pnrr_total": 10,
+            "concentration_ratio": 0.8,
         }
         call_count = 0
+
         def side_effect(query, params=None):
             nonlocal call_count
             call_count += 1
@@ -371,18 +398,20 @@ class TestDetectPnrrConcentration:
 # detect_community_monopoly
 # ---------------------------------------------------------------------------
 
+
 class TestDetectCommunityMonopoly:
     def test_monopoly_above_threshold(self):
         row = {
-            "community":       7,
-            "company_id":      "c1",
-            "company_name":    "Monopoly SRL",
-            "wins":            12,
-            "company_value":   7_000_000.0,
+            "community": 7,
+            "company_id": "c1",
+            "company_name": "Monopoly SRL",
+            "wins": 12,
+            "company_value": 7_000_000.0,
             "community_total": 9_000_000.0,
-            "share":           0.78,
+            "share": 0.78,
         }
         call_count = 0
+
         def side_effect(query, params=None):
             nonlocal call_count
             call_count += 1
@@ -398,16 +427,18 @@ class TestDetectCommunityMonopoly:
 # detect_network_clique
 # ---------------------------------------------------------------------------
 
+
 class TestDetectNetworkClique:
     def test_high_triangle_count_triggers_finding(self):
         row = {
-            "company_id":   "c1",
+            "company_id": "c1",
             "company_name": "Clique SRL",
-            "triangles":    10,
-            "community":    3,
+            "triangles": 10,
+            "community": 3,
             "current_risk": 0.4,
         }
         call_count = 0
+
         def side_effect(query, params=None):
             nonlocal call_count
             call_count += 1
@@ -428,16 +459,26 @@ class TestDetectNetworkClique:
 # run_all_detectors
 # ---------------------------------------------------------------------------
 
+
 class TestRunAllDetectors:
     def test_returns_dict_with_all_thirteen_keys(self):
         lib, conn = make_library()
         results = lib.run_all_detectors()
         expected_keys = {
-            "bid_rotation", "ghost_bidding", "split_tendering", "short_award_window",
-            "price_manipulation", "ubo_conflict", "winner_loser_ring", "pnrr_concentration",
-            "community_monopoly", "network_clique",
+            "bid_rotation",
+            "ghost_bidding",
+            "split_tendering",
+            "short_award_window",
+            "price_manipulation",
+            "ubo_conflict",
+            "winner_loser_ring",
+            "pnrr_concentration",
+            "community_monopoly",
+            "network_clique",
             # supply-chain & corporate-network detectors (added 2024)
-            "carousel_fraud", "board_overlap_collusion", "subcontractor_concentration",
+            "carousel_fraud",
+            "board_overlap_collusion",
+            "subcontractor_concentration",
         }
         assert set(results.keys()) == expected_keys
 
@@ -462,10 +503,11 @@ class TestRunAllDetectors:
 # get_summary_stats
 # ---------------------------------------------------------------------------
 
+
 class TestGetSummaryStats:
     def test_returns_dict_with_total_and_by_pattern(self):
         rows = [
-            {"pattern": "bid_rotation", "severity": "high",   "occurrences": 3},
+            {"pattern": "bid_rotation", "severity": "high", "occurrences": 3},
             {"pattern": "split_tendering", "severity": "high", "occurrences": 7},
         ]
         lib, conn = make_library(query_side_effect=lambda q, p=None: rows)

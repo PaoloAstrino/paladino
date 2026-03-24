@@ -7,16 +7,16 @@ Uses mock Neo4j connections so tests run without a live database.
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from paladino.app.ubo_report_generator import UBOReportGenerator
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Factory helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _mock_conn(query_results: dict | None = None) -> MagicMock:
     """
@@ -26,14 +26,30 @@ def _mock_conn(query_results: dict | None = None) -> MagicMock:
     If a keyword is not found, returns [].
     """
     default_results = {
-        "Company {cf":    [{"cf": "12345678901", "name": "TEST SRL", "ateco": "41.10",
-                            "comune": "Roma", "regione": "Lazio",
-                            "vat_active": True, "risk_score": 0.2, "address": "Via Roma 1"}],
-        "AWARDED":        [],
+        "Company {cf": [
+            {
+                "cf": "12345678901",
+                "name": "TEST SRL",
+                "ateco": "41.10",
+                "comune": "Roma",
+                "regione": "Lazio",
+                "vat_active": True,
+                "risk_score": 0.2,
+                "address": "Via Roma 1",
+            }
+        ],
+        "AWARDED": [],
         "SHAREHOLDER_OF": [],
-        "REPRESENTS":     [{"person_cf": "RSSMRA80A01H501Z", "name": "Mario Rossi",
-                            "role": "Amministratore", "start_date": "2010-01-01", "end_date": None}],
-        "FLAGGED_BY":     [],
+        "REPRESENTS": [
+            {
+                "person_cf": "RSSMRA80A01H501Z",
+                "name": "Mario Rossi",
+                "role": "Amministratore",
+                "start_date": "2010-01-01",
+                "end_date": None,
+            }
+        ],
+        "FLAGGED_BY": [],
         "SUBCONTRACTS_TO": [],
     }
     if query_results:
@@ -65,6 +81,7 @@ def _make_generator(query_results=None) -> UBOReportGenerator:
 # Format validation
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestFormatValidation:
     def test_json_format_accepted(self):
         gen = _make_generator()
@@ -92,7 +109,7 @@ class TestFormatValidation:
 
     def test_company_not_found_raises(self):
         conn = _mock_conn({"Company {cf": []})  # empty result → KeyError
-        gen  = UBOReportGenerator(conn=conn)
+        gen = UBOReportGenerator(conn=conn)
         with pytest.raises(KeyError):
             gen.generate("00000000000")
 
@@ -100,6 +117,7 @@ class TestFormatValidation:
 # ─────────────────────────────────────────────────────────────────────────────
 # JSON report structure
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestJSONReport:
     def _get_report(self):
@@ -109,9 +127,14 @@ class TestJSONReport:
     def test_top_level_keys(self):
         data = self._get_report()
         required = {
-            "generated_at", "company_id", "company_info",
-            "ownership_chain", "ubos", "directors",
-            "fraud_patterns", "supply_chain",
+            "generated_at",
+            "company_id",
+            "company_info",
+            "ownership_chain",
+            "ubos",
+            "directors",
+            "fraud_patterns",
+            "supply_chain",
         }
         assert required.issubset(data.keys())
 
@@ -130,6 +153,7 @@ class TestJSONReport:
 
     def test_generated_at_is_iso_string(self):
         from datetime import datetime
+
         data = self._get_report()
         # Should not raise
         datetime.fromisoformat(data["generated_at"].replace("Z", "+00:00"))
@@ -138,6 +162,7 @@ class TestJSONReport:
 # ─────────────────────────────────────────────────────────────────────────────
 # Markdown report structure
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestMarkdownReport:
     def _get_report(self) -> str:
@@ -148,8 +173,14 @@ class TestMarkdownReport:
 
     def test_contains_required_sections(self):
         md = self._get_report()
-        for section in ["Shell Risk Score", "Ultimate Beneficial Owners", "Board of Directors",
-                        "Fraud Pattern Alerts", "Corporate Family", "Supply Chain"]:
+        for section in [
+            "Shell Risk Score",
+            "Ultimate Beneficial Owners",
+            "Board of Directors",
+            "Fraud Pattern Alerts",
+            "Corporate Family",
+            "Supply Chain",
+        ]:
             assert section in md, f"Section '{section}' missing from Markdown report"
 
     def test_directors_rendered_in_table(self):
@@ -161,9 +192,12 @@ class TestMarkdownReport:
 # CSV report structure
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestCSVReport:
     def _get_rows(self) -> list[list[str]]:
-        import csv, io
+        import csv
+        import io
+
         raw = _make_generator().generate("12345678901", format="csv")
         return list(csv.reader(io.StringIO(raw)))
 
@@ -189,6 +223,7 @@ class TestCSVReport:
 # UBO extraction
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestUBOExtraction:
     def test_no_chain_returns_empty_ubos(self):
         data = json.loads(_make_generator().generate("12345678901", format="json"))
@@ -200,7 +235,7 @@ class TestUBOExtraction:
         gen = _make_generator()
         chain = [
             {"owner_id": "PERSON_A", "company_id": "COMP_B"},
-            {"owner_id": "COMP_B",   "company_id": "12345678901"},
+            {"owner_id": "COMP_B", "company_id": "12345678901"},
         ]
         ubos = gen._extract_ubos(chain)
         # PERSON_A has no owner in the chain → it is the UBO

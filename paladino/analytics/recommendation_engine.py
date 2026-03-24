@@ -50,19 +50,18 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from loguru import logger
 
 from paladino.db import Neo4jConnection
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Risk-tier helper (mirrors anomaly_explainer)
 # ─────────────────────────────────────────────────────────────────────────────
 
-_TIER_HIGH   = 0.70
+_TIER_HIGH = 0.70
 _TIER_MEDIUM = 0.40
 
 
@@ -78,11 +77,11 @@ def _risk_tier(score: float) -> str:
 # Similarity scoring constants
 # ─────────────────────────────────────────────────────────────────────────────
 
-_WEIGHT_SAME_ATECO   = 0.30   # same 2-digit sector prefix
-_WEIGHT_SAME_REGION  = 0.25   # same Italian region
-_WEIGHT_RISK_CLOSE   = 0.20   # |risk_delta| < RISK_DELTA_THRESHOLD
-_WEIGHT_FLAG_JACCARD = 0.25   # anomaly_flags Jaccard similarity
-RISK_DELTA_THRESHOLD = 0.15   # risk scores within this band are "similar"
+_WEIGHT_SAME_ATECO = 0.30  # same 2-digit sector prefix
+_WEIGHT_SAME_REGION = 0.25  # same Italian region
+_WEIGHT_RISK_CLOSE = 0.20  # |risk_delta| < RISK_DELTA_THRESHOLD
+_WEIGHT_FLAG_JACCARD = 0.25  # anomaly_flags Jaccard similarity
+RISK_DELTA_THRESHOLD = 0.15  # risk scores within this band are "similar"
 COMMUNITY_DEFAULT_SCORE = 0.85  # similarity score assigned to community neighbours
 
 
@@ -90,53 +89,54 @@ COMMUNITY_DEFAULT_SCORE = 0.85  # similarity score assigned to community neighbo
 # Data-classes
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class Recommendation:
     """A single company recommendation with explanation."""
-    company_id:       str
-    company_name:     str
-    cf:               str
-    risk_score:       float
-    similarity_score: float          # 0.0 – 1.0
-    reason:           str
-    strategies:       List[str]      # which strategies produced this recommendation
-    shared_features:  List[str]      # human-readable feature overlap
 
-    def as_dict(self) -> Dict[str, Any]:
+    company_id: str
+    company_name: str
+    cf: str
+    risk_score: float
+    similarity_score: float  # 0.0 – 1.0
+    reason: str
+    strategies: list[str]  # which strategies produced this recommendation
+    shared_features: list[str]  # human-readable feature overlap
+
+    def as_dict(self) -> dict[str, Any]:
         return {
-            "company_id":       self.company_id,
-            "company_name":     self.company_name,
-            "cf":               self.cf,
-            "risk_score":       round(self.risk_score, 4),
+            "company_id": self.company_id,
+            "company_name": self.company_name,
+            "cf": self.cf,
+            "risk_score": round(self.risk_score, 4),
             "similarity_score": round(self.similarity_score, 4),
-            "reason":           self.reason,
-            "strategies":       self.strategies,
-            "shared_features":  self.shared_features,
+            "reason": self.reason,
+            "strategies": self.strategies,
+            "shared_features": self.shared_features,
         }
 
 
 @dataclass
 class RecommendationResult:
     """Full recommendation result for a source company."""
-    source_company_id:   str
-    source_company_name: str
-    source_risk_score:   float
-    source_risk_tier:    str
-    recommendations:     List[Recommendation]
-    strategies_used:     List[str]
-    generated_at:        str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
 
-    def as_dict(self) -> Dict[str, Any]:
+    source_company_id: str
+    source_company_name: str
+    source_risk_score: float
+    source_risk_tier: str
+    recommendations: list[Recommendation]
+    strategies_used: list[str]
+    generated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+
+    def as_dict(self) -> dict[str, Any]:
         return {
-            "source_company_id":   self.source_company_id,
+            "source_company_id": self.source_company_id,
             "source_company_name": self.source_company_name,
-            "source_risk_score":   round(self.source_risk_score, 4),
-            "source_risk_tier":    self.source_risk_tier,
-            "recommendations":     [r.as_dict() for r in self.recommendations],
-            "strategies_used":     self.strategies_used,
-            "generated_at":        self.generated_at,
+            "source_risk_score": round(self.source_risk_score, 4),
+            "source_risk_tier": self.source_risk_tier,
+            "recommendations": [r.as_dict() for r in self.recommendations],
+            "strategies_used": self.strategies_used,
+            "generated_at": self.generated_at,
         }
 
     def render(self, fmt: str = "json") -> str:
@@ -154,16 +154,17 @@ class RecommendationResult:
 # Renderers
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _render_markdown(r: RecommendationResult) -> str:
     tier_badge = {"HIGH": "🔴", "MEDIUM": "🟡", "LOW": "🟢"}.get(r.source_risk_tier, "")
-    lines: List[str] = [
+    lines: list[str] = [
         f"# Recommendations for {r.source_company_name}",
         "",
         f"**Source risk score:** {r.source_risk_score:.2f} {tier_badge} {r.source_risk_tier}  ",
         f"**Strategies applied:** {', '.join(r.strategies_used)}  ",
         f"**Generated:** {r.generated_at}",
         "",
-        f"---",
+        "---",
         "",
         f"## {len(r.recommendations)} Recommended Companies",
         "",
@@ -173,8 +174,8 @@ def _render_markdown(r: RecommendationResult) -> str:
         lines += [
             f"### {i}. {rec.company_name}",
             "",
-            f"| Field | Value |",
-            f"|-------|-------|",
+            "| Field | Value |",
+            "|-------|-------|",
             f"| CF | `{rec.cf}` |",
             f"| Risk Score | {rec.risk_score:.2f} {tier_b} {_risk_tier(rec.risk_score)} |",
             f"| Similarity | {rec.similarity_score:.0%} |",
@@ -189,7 +190,7 @@ def _render_markdown(r: RecommendationResult) -> str:
 
 
 def _render_text(r: RecommendationResult) -> str:
-    lines: List[str] = [
+    lines: list[str] = [
         f"Recommendations for {r.source_company_name} "
         f"(risk {r.source_risk_score:.2f} / {r.source_risk_tier}):",
         "",
@@ -207,7 +208,8 @@ def _render_text(r: RecommendationResult) -> str:
 # Jaccard utility
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _jaccard(a: List[str], b: List[str]) -> float:
+
+def _jaccard(a: list[str], b: list[str]) -> float:
     """Jaccard similarity between two lists treated as sets."""
     sa, sb = set(a or []), set(b or [])
     if not sa and not sb:
@@ -215,7 +217,7 @@ def _jaccard(a: List[str], b: List[str]) -> float:
     return len(sa & sb) / len(sa | sb)
 
 
-def _ateco2(ateco: Optional[str]) -> Optional[str]:
+def _ateco2(ateco: str | None) -> str | None:
     """Return the 2-digit ATECO prefix, or None."""
     if not ateco or len(ateco) < 2:
         return None
@@ -225,6 +227,7 @@ def _ateco2(ateco: Optional[str]) -> Optional[str]:
 # ─────────────────────────────────────────────────────────────────────────────
 # Main engine
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class RecommendationEngine:
     """
@@ -246,7 +249,7 @@ class RecommendationEngine:
     def recommend(
         self,
         company_id: str,
-        strategies: Optional[List[str]] = None,
+        strategies: list[str] | None = None,
         limit: int = 10,
         min_similarity: float = 0.0,
     ) -> RecommendationResult:
@@ -287,7 +290,7 @@ class RecommendationEngine:
         )
 
         # Collect raw candidates from each strategy
-        all_recs: Dict[str, Recommendation] = {}  # keyed by company_id
+        all_recs: dict[str, Recommendation] = {}  # keyed by company_id
 
         if "content" in strategies:
             for rec in self._content_based(source):
@@ -307,9 +310,9 @@ class RecommendationEngine:
 
         # Filter out the source company itself, apply min_similarity, sort, trim
         filtered = [
-            r for r in all_recs.values()
-            if r.company_id != source["company_id"]
-            and r.similarity_score >= min_similarity
+            r
+            for r in all_recs.values()
+            if r.company_id != source["company_id"] and r.similarity_score >= min_similarity
         ]
         filtered.sort(key=lambda r: r.similarity_score, reverse=True)
         final = filtered[:limit]
@@ -325,7 +328,7 @@ class RecommendationEngine:
 
     # ── strategy: content-based ───────────────────────────────────────────────
 
-    def _content_based(self, source: Dict[str, Any]) -> List[Recommendation]:
+    def _content_based(self, source: dict[str, Any]) -> list[Recommendation]:
         """
         Compute feature-overlap similarity for candidate companies.
 
@@ -354,15 +357,15 @@ class RecommendationEngine:
             {"source_id": source["company_id"]},
         )
 
-        src_ateco  = _ateco2(source.get("ateco"))
+        src_ateco = _ateco2(source.get("ateco"))
         src_region = source.get("regione")
-        src_risk   = source.get("risk_score", 0.0)
-        src_flags  = source.get("anomaly_flags") or []
+        src_risk = source.get("risk_score", 0.0)
+        src_flags = source.get("anomaly_flags") or []
 
-        results: List[Recommendation] = []
+        results: list[Recommendation] = []
         for row in rows:
             score = 0.0
-            shared: List[str] = []
+            shared: list[str] = []
 
             cand_ateco = _ateco2(row.get("ateco"))
             if src_ateco and cand_ateco and src_ateco == cand_ateco:
@@ -388,15 +391,13 @@ class RecommendationEngine:
             if score <= 0:
                 continue
 
-            reason_parts: List[str] = []
+            reason_parts: list[str] = []
             if f"ATECO:{src_ateco}" in shared:
                 reason_parts.append(f"same ATECO sector ({src_ateco})")
             if f"regione:{src_region}" in shared:
                 reason_parts.append(f"same region ({src_region})")
             if f"risk_delta<{RISK_DELTA_THRESHOLD}" in shared:
-                reason_parts.append(
-                    f"similar risk score (delta {abs(cand_risk - src_risk):.2f})"
-                )
+                reason_parts.append(f"similar risk score (delta {abs(cand_risk - src_risk):.2f})")
             if jac > 0:
                 reason_parts.append(f"overlapping anomaly flags (Jaccard {jac:.2f})")
 
@@ -418,7 +419,7 @@ class RecommendationEngine:
 
     # ── strategy: community-based ─────────────────────────────────────────────
 
-    def _community_based(self, source: Dict[str, Any]) -> List[Recommendation]:
+    def _community_based(self, source: dict[str, Any]) -> list[Recommendation]:
         """
         Return companies in the same Louvain community (``community_id`` property).
         """
@@ -442,7 +443,7 @@ class RecommendationEngine:
             {"cid": community_id, "source_id": source["company_id"]},
         )
 
-        results: List[Recommendation] = []
+        results: list[Recommendation] = []
         for row in rows:
             results.append(
                 Recommendation(
@@ -460,7 +461,7 @@ class RecommendationEngine:
 
     # ── strategy: anomaly-profile ─────────────────────────────────────────────
 
-    def _anomaly_based(self, source: Dict[str, Any]) -> List[Recommendation]:
+    def _anomaly_based(self, source: dict[str, Any]) -> list[Recommendation]:
         """
         Find companies with similar anomaly-flag profiles using Jaccard similarity.
         Only considers companies that share at least one anomaly flag with the source.
@@ -486,10 +487,10 @@ class RecommendationEngine:
             {"source_id": source["company_id"], "flags": src_flags},
         )
 
-        results: List[Recommendation] = []
+        results: list[Recommendation] = []
         for row in rows:
-            cand_flags  = list(row.get("anomaly_flags") or [])
-            jac         = _jaccard(src_flags, cand_flags)
+            cand_flags = list(row.get("anomaly_flags") or [])
+            jac = _jaccard(src_flags, cand_flags)
             shared_flags = list(set(src_flags) & set(cand_flags))
             results.append(
                 Recommendation(
@@ -499,8 +500,7 @@ class RecommendationEngine:
                     risk_score=float(row.get("risk_score") or 0.0),
                     similarity_score=jac,
                     reason=(
-                        f"Shares anomaly flags [{', '.join(shared_flags)}] "
-                        f"(Jaccard {jac:.2f})."
+                        f"Shares anomaly flags [{', '.join(shared_flags)}] (Jaccard {jac:.2f})."
                     ),
                     strategies=["anomaly"],
                     shared_features=[f"flag:{f}" for f in shared_flags],
@@ -512,7 +512,7 @@ class RecommendationEngine:
 
     # ── strategy: sector trending ─────────────────────────────────────────────
 
-    def _sector_trending(self, source: Dict[str, Any]) -> List[Recommendation]:
+    def _sector_trending(self, source: dict[str, Any]) -> list[Recommendation]:
         """
         Return the highest-risk companies in the same 2-digit ATECO sector,
         ordered by risk_score descending (sector-level risk hotspots).
@@ -540,7 +540,7 @@ class RecommendationEngine:
             {"ateco2": src_ateco2, "source_id": source["company_id"]},
         )
 
-        results: List[Recommendation] = []
+        results: list[Recommendation] = []
         for row in rows:
             score = float(row.get("risk_score") or 0.0)
             results.append(
@@ -549,7 +549,7 @@ class RecommendationEngine:
                     company_name=row.get("company_name") or row.get("cf") or row["company_id"],
                     cf=row.get("cf") or "",
                     risk_score=score,
-                    similarity_score=round(score, 4),   # trending = ranked by own risk
+                    similarity_score=round(score, 4),  # trending = ranked by own risk
                     reason=(
                         f"Trending risk in sector ATECO {row.get('ateco') or src_ateco2} "
                         f"(risk score {score:.2f})."
@@ -562,7 +562,7 @@ class RecommendationEngine:
 
     # ── helper: fetch source company ─────────────────────────────────────────
 
-    def _get_company_info(self, company_id: str) -> Optional[Dict[str, Any]]:
+    def _get_company_info(self, company_id: str) -> dict[str, Any] | None:
         rows = self.conn.run_query(
             """
             MATCH (c:Company)
@@ -586,8 +586,9 @@ class RecommendationEngine:
 # Deduplication helper
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _merge(
-    registry: Dict[str, Recommendation],
+    registry: dict[str, Recommendation],
     incoming: Recommendation,
     strategy: str,
 ) -> None:

@@ -9,9 +9,9 @@ from rich.theme import Theme
 PALADIN_ART = (
     "\n"
     "  ____   _   _      _   ____  ___ _  _  ___  \n"
-    " |  _ \ /_\ | |    /_\ |  _ \|_ _| \| |/ _ \ \n"
-    " | |_) / _ \| |__ / _ \| |_) || || .`| || (_) |\n"
-    " |  __/_/ \_\____/_/ \_\  __/|___|_|\_ |\___/ \n"
+    " |  _ \\ /_\\ | |    /_\\ |  _ \\|_ _| \\| |/ _ \\ \n"
+    " | |_) / _ \\| |__ / _ \\| |_) || || .`| || (_) |\n"
+    " |  __/_/ \\_\\____/_/ \\_\\  __/|___|_|\\_ |\\___/ \n"
     " |_|                    |_|             \n"
     "\n"
     " ─────────────────────────────────────────────\n"
@@ -21,14 +21,16 @@ PALADIN_ART = (
 )
 
 # Rich Console Theme
-PALADINO_THEME = Theme({
-    "info": "cyan",
-    "warning": "yellow",
-    "error": "bold red",
-    "success": "bold green",
-    "brand": "bold magenta",
-    "highlight": "bold yellow"
-})
+PALADINO_THEME = Theme(
+    {
+        "info": "cyan",
+        "warning": "yellow",
+        "error": "bold red",
+        "success": "bold green",
+        "brand": "bold magenta",
+        "highlight": "bold yellow",
+    }
+)
 
 # CLI Configuration
 CLI_TIMEOUT = 300  # 5 minutes for subprocess operations
@@ -38,14 +40,14 @@ DEFAULT_HOST = "0.0.0.0"
 # ETL Script Mappings
 # Keys match `MaintenanceChoice.<X>.split(" (")[0]` to survive the CLI lookup.
 ETL_SCRIPTS = {
-    "Run ANAC ETL Pipeline":                  "run_anac_etl.py",
-    "Run OpenCUP ETL Pipeline":               "run_opencup_etl.py",
-    "Run ISTAT ETL Pipeline":                 "run_istat_etl.py",
-    "Run Entity Resolution":                  "run_entity_resolution.py",
-    "Run GDS Analytics":                      "run_gds_analytics.py",
+    "Run ANAC ETL Pipeline": "run_anac_etl.py",
+    "Run OpenCUP ETL Pipeline": "run_opencup_etl.py",
+    "Run ISTAT ETL Pipeline": "run_istat_etl.py",
+    "Run Entity Resolution": "run_entity_resolution.py",
+    "Run GDS Analytics": "run_gds_analytics.py",
     "Run Fraud Pattern Detection \U0001f534": "run_fraud_detection.py",
-    "Run Supply Chain ETL \U0001f517":        "run_supply_chain_etl.py",
-    "Run Temporal Analysis \U0001f4c8":       "run_temporal_analysis.py",
+    "Run Supply Chain ETL \U0001f517": "run_supply_chain_etl.py",
+    "Run Temporal Analysis \U0001f4c8": "run_temporal_analysis.py",
 }
 
 # ---------------------------------------------------------------------------
@@ -99,9 +101,9 @@ FRAUD_WINNER_LOSER_PAIR_MIN: int = 4
 # Risk score contribution from FraudPatternLibrary (0.0 - 1.0)
 # Added ON TOP of existing RiskEngine scores (capped at 1.0 globally)
 FRAUD_PATTERN_RISK_CONTRIBUTION: dict = {
-    "low":      0.05,
-    "medium":   0.15,
-    "high":     0.25,
+    "low": 0.05,
+    "medium": 0.15,
+    "high": 0.25,
     "critical": 0.40,
 }
 
@@ -171,18 +173,18 @@ TEMPORAL_SEASONAL_YEARS: int = 3
 
 # Canonical pattern names  (used as node properties in the graph)
 FRAUD_PATTERN_NAMES: dict = {
-    "bid_rotation":          "Bid Rotation",
-    "ghost_bidding":         "Ghost Bidding",
-    "split_tendering":       "Split Tendering (Frazionamento)",
-    "short_award_window":    "Short Award Window",
-    "price_manipulation":    "Price Manipulation",
-    "ubo_conflict":          "UBO / Ownership Conflict",
-    "winner_loser_ring":     "Winner-Loser Collusion Ring",
-    "pnrr_concentration":    "PNRR Fund Concentration",
-    "community_monopoly":           "Community Monopoly",
-    "network_clique":               "Dense Collusion Network (Triangle)",
-    "carousel_fraud":               "Carousel Fraud (Supply Chain Cycle)",
-    "board_overlap_collusion":      "Board Overlap Collusion",
-    "subcontractor_concentration":  "Subcontractor Concentration",
-    "shell_company_network":         "Shell Company Network (Multi-Factor)",
+    "bid_rotation": "Bid Rotation",
+    "ghost_bidding": "Ghost Bidding",
+    "split_tendering": "Split Tendering (Frazionamento)",
+    "short_award_window": "Short Award Window",
+    "price_manipulation": "Price Manipulation",
+    "ubo_conflict": "UBO / Ownership Conflict",
+    "winner_loser_ring": "Winner-Loser Collusion Ring",
+    "pnrr_concentration": "PNRR Fund Concentration",
+    "community_monopoly": "Community Monopoly",
+    "network_clique": "Dense Collusion Network (Triangle)",
+    "carousel_fraud": "Carousel Fraud (Supply Chain Cycle)",
+    "board_overlap_collusion": "Board Overlap Collusion",
+    "subcontractor_concentration": "Subcontractor Concentration",
+    "shell_company_network": "Shell Company Network (Multi-Factor)",
 }

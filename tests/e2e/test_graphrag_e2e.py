@@ -3,6 +3,7 @@ End-to-end test for GraphRAG agent with LLM integration.
 """
 
 import pytest
+
 from paladino.app.graphrag_agent import GraphRAGAgent
 
 
@@ -10,7 +11,7 @@ from paladino.app.graphrag_agent import GraphRAGAgent
 def test_graphrag_full_workflow(clean_neo4j, mock_ollama):
     """
     E2E test for complete GraphRAG workflow.
-    
+
     This test:
     1. Creates a complete graph (companies, tenders, projects, geography)
     2. Uses LLM to classify natural language query
@@ -73,61 +74,57 @@ def test_graphrag_full_workflow(clean_neo4j, mock_ollama):
             CREATE (t1)-[:PART_OF_PROJECT {confidence: 0.95}]->(proj)
             CREATE (proj)-[:FUNDED_BY]->(f)
         """)
-    
+
     # 2. Initialize agent
     agent = GraphRAGAgent(clean_neo4j)
-    
+
     # 3. Test different query types
-    
+
     # Query 1: Companies by region
     mock_ollama.return_value.json.return_value = {
         "message": {
             "content": '{"template_name": "companies_by_region", "params": {"region": "Lombardia"}}'
         }
     }
-    
+
     result1 = agent.natural_language_query("Which companies are in Lombardia?")
-    
+
     assert result1["template"] == "companies_by_region"
     assert len(result1["results"]) == 2
     assert any(r["company"] == "ACME COSTRUZIONI" for r in result1["results"])
-    
+
     # Query 2: High risk companies
     mock_ollama.return_value.json.return_value = {
         "message": {
             "content": '{"template_name": "high_risk_companies", "params": {"min_risk": 0.5}}'
         }
     }
-    
+
     result2 = agent.natural_language_query("Show me high risk companies")
-    
+
     assert result2["template"] == "high_risk_companies"
     assert len(result2["results"]) == 1
     assert result2["results"][0]["nome_normalizzato"] == "BETA ENGINEERING"
     assert result2["results"][0]["risk_score"] == 0.85
-    
+
     # Query 3: PNRR projects
     mock_ollama.return_value.json.return_value = {
-        "message": {
-            "content": '{"template_name": "pnrr_projects", "params": {}}'
-        }
+        "message": {"content": '{"template_name": "pnrr_projects", "params": {}}'}
     }
-    
+
     result3 = agent.natural_language_query("What PNRR projects do we have?")
-    
+
     assert result3["template"] == "pnrr_projects"
     assert len(result3["results"]) == 1
     assert result3["results"][0]["cup"] == "J12345678901234"
-    
+
     # Query 4: Regional spending
     mock_ollama.return_value.json.return_value = {
-        "message": {
-            "content": '{"template_name": "regional_spending", "params": {}}'
-        }
+        "message": {"content": '{"template_name": "regional_spending", "params": {}}'}
     }
-    
+
     result4 = agent.natural_language_query("Show me spending by region")
-    
+
     assert result4["template"] == "regional_spending"
     assert len(result4["results"]) >= 1
     assert any(r["regione"] == "Lombardia" for r in result4["results"])
@@ -137,7 +134,7 @@ def test_graphrag_full_workflow(clean_neo4j, mock_ollama):
 def test_graphrag_multi_hop_reasoning(clean_neo4j):
     """
     E2E test for multi-hop graph traversal.
-    
+
     Tests complex queries that require multiple relationship hops.
     """
     # Create test data
@@ -156,10 +153,10 @@ def test_graphrag_multi_hop_reasoning(clean_neo4j):
             CREATE (c)-[:LOCATED_IN]->(m)
             CREATE (m)-[:IN_REGION]->(r)
         """)
-    
+
     # Execute multi-hop query
     agent = GraphRAGAgent(clean_neo4j)
-    
+
     # Custom query: Companies with PNRR projects
     with clean_neo4j.session() as session:
         result = session.run("""
@@ -167,9 +164,9 @@ def test_graphrag_multi_hop_reasoning(clean_neo4j):
                   -[:FUNDED_BY]->(f:FundingSource {nome: 'PNRR'})
             RETURN c.nome_normalizzato as company, p.titolo as project, count(t) as tenders
         """)
-        
+
         records = [dict(r) for r in result]
-        
+
         assert len(records) == 1
         assert records[0]["company"] == "TEST CO"
         assert records[0]["project"] == "Test Project"

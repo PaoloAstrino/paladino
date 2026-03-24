@@ -11,10 +11,11 @@ Usage:
     python scripts/demo_value.py
 """
 
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich import box
+
 from paladino.db import get_driver
 
 console = Console()
@@ -35,20 +36,20 @@ def print_results(results: list, title: str = "Results"):
     if not results:
         console.print("[yellow]No results found[/yellow]")
         return
-    
+
     table = Table(title=title, box=box.ROUNDED)
-    
+
     # Add columns from first result
     if results:
         for key in results[0].keys():
             table.add_column(key, style="green")
-    
+
     # Add rows (limit to 10 for display)
     for row in results[:10]:
         table.add_row(*[str(v) for v in row.values()])
-    
+
     console.print(table)
-    
+
     if len(results) > 10:
         console.print(f"[dim]... and {len(results) - 10} more results[/dim]")
 
@@ -56,13 +57,13 @@ def print_results(results: list, title: str = "Results"):
 def demo_basic_stats():
     """Show basic graph statistics."""
     print_header("📊 BASIC GRAPH STATISTICS")
-    
+
     driver = get_driver()
     with driver.session() as session:
         # Total nodes
         result = session.run("MATCH (n) RETURN count(n) as total").single()
         console.print(f"\nTotal nodes in graph: [green]{result['total']}[/green]")
-        
+
         # Node breakdown
         result = session.run("""
             MATCH (n) 
@@ -71,7 +72,7 @@ def demo_basic_stats():
         """)
         results = [dict(r) for r in result]
         print_results(results, "Node Types")
-        
+
         # Relationships
         result = session.run("""
             MATCH ()-[r]->() 
@@ -85,7 +86,7 @@ def demo_basic_stats():
 def demo_top_companies():
     """Show top companies by tenders won."""
     print_header("🏆 TOP COMPANIES BY TENDERS WON")
-    
+
     driver = get_driver()
     with driver.session() as session:
         query = """
@@ -106,7 +107,7 @@ def demo_top_companies():
 def demo_risk_analysis():
     """Demonstrate risk detection capabilities."""
     print_header("⚠️  RISK ANALYSIS DEMO")
-    
+
     driver = get_driver()
     with driver.session() as session:
         # Companies with high single-bidder ratio
@@ -126,7 +127,9 @@ def demo_risk_analysis():
             LIMIT 10
         """
         print_query(query)
-        console.print("\n[yellow]Companies with >50% single-bidder tenders (potential risk indicator):[/yellow]")
+        console.print(
+            "\n[yellow]Companies with >50% single-bidder tenders (potential risk indicator):[/yellow]"
+        )
         result = session.run(query)
         results = [dict(r) for r in result]
         print_results(results, "High Risk Companies")
@@ -135,7 +138,7 @@ def demo_risk_analysis():
 def demo_cross_source():
     """Demonstrate cross-source analysis."""
     print_header("🔗 CROSS-SOURCE ANALYSIS")
-    
+
     driver = get_driver()
     with driver.session() as session:
         # Tenders linked to projects
@@ -157,7 +160,7 @@ def demo_cross_source():
 def demo_geographic_analysis():
     """Show geographic distribution."""
     print_header("🗺️  GEOGRAPHIC ANALYSIS")
-    
+
     driver = get_driver()
     with driver.session() as session:
         # Tenders by region
@@ -180,7 +183,7 @@ def demo_geographic_analysis():
 def demo_buyer_analysis():
     """Analyze procurement buyers."""
     print_header("🏛️  BUYER ANALYSIS")
-    
+
     driver = get_driver()
     with driver.session() as session:
         # Top buyers
@@ -202,7 +205,7 @@ def demo_buyer_analysis():
 def demo_value_summary():
     """Show value summary."""
     print_header("💡 VALUE DELIVERED BY PALADINO")
-    
+
     console.print("""
 [green]✅ What Paladino Enables:[/green]
 
@@ -230,24 +233,27 @@ def demo_value_summary():
    - Ask questions in Italian
    - GraphRAG-powered understanding
 """)
-    
-    console.print(Panel(
-        "🎯 Paladino turns fragmented public data into actionable intelligence",
-        style="bold green",
-        box=box.DOUBLE
-    ))
+
+    console.print(
+        Panel(
+            "🎯 Paladino turns fragmented public data into actionable intelligence",
+            style="bold green",
+            box=box.DOUBLE,
+        )
+    )
 
 
 def main():
     """Run the value demonstration."""
     console.print("\n")
-    console.print(Panel.fit(
-        "🛡️  PALADINO VALUE DEMONSTRATION\n" +
-        "Italian Public Funds Knowledge Graph",
-        style="bold magenta",
-        box=box.DOUBLE
-    ))
-    
+    console.print(
+        Panel.fit(
+            "🛡️  PALADINO VALUE DEMONSTRATION\n" + "Italian Public Funds Knowledge Graph",
+            style="bold magenta",
+            box=box.DOUBLE,
+        )
+    )
+
     try:
         # Try to connect
         driver = get_driver()
@@ -260,7 +266,7 @@ def main():
         console.print("   2. Load data: python scripts/run_anac_etl.py")
         console.print("   3. Run this demo again")
         return 1
-    
+
     # Run demos
     demo_basic_stats()
     demo_top_companies()
@@ -269,14 +275,14 @@ def main():
     demo_geographic_analysis()
     demo_buyer_analysis()
     demo_value_summary()
-    
+
     console.print("\n[green]✨ Demo complete![/green]")
     console.print("\n[cyan]Next steps:[/cyan]")
     console.print("   - Try: paladino investigate  (interactive mode)")
     console.print("   - Try: paladino work  (start API)")
     console.print("   - Read: VALIDATION_PLAN.md  (comprehensive testing)")
     console.print()
-    
+
     return 0
 
 

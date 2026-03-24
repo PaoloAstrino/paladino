@@ -19,10 +19,10 @@ See paladino/etl/corporate/infocamere_downloader.py for fetch details.
 """
 
 from paladino.etl.corporate.download import CorporateSourceDiscovery
-from paladino.etl.corporate.transform import CorporateTransformer
-from paladino.etl.corporate.load import CorporateLoader
-from paladino.etl.corporate.infocamere_downloader import RegistroImpreseFetcher
 from paladino.etl.corporate.incremental_sync import CorporateSyncTracker
+from paladino.etl.corporate.infocamere_downloader import RegistroImpreseFetcher
+from paladino.etl.corporate.load import CorporateLoader
+from paladino.etl.corporate.transform import CorporateTransformer
 
 __all__ = [
     "CorporateSourceDiscovery",

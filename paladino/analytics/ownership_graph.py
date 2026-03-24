@@ -10,8 +10,6 @@ been loaded (they return empty results and print an informative hint).
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
-
 from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
@@ -47,19 +45,22 @@ _MISSING_DATA_HINT = """\
 """
 
 
-def _warn_empty(query_name: str, reason: Optional[str] = None) -> None:
+def _warn_empty(query_name: str, reason: str | None = None) -> None:
     hint = f"[dim]({reason})[/dim]\n\n" + _MISSING_DATA_HINT if reason else _MISSING_DATA_HINT
-    _console.print(Panel(
-        hint,
-        title=f"[bold yellow]ℹ️  {query_name} — no results[/bold yellow]",
-        border_style="yellow",
-        expand=False,
-    ))
+    _console.print(
+        Panel(
+            hint,
+            title=f"[bold yellow]ℹ️  {query_name} — no results[/bold yellow]",
+            border_style="yellow",
+            expand=False,
+        )
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Main analyser class
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class OwnershipGraphAnalyzer:
     """
@@ -83,7 +84,7 @@ class OwnershipGraphAnalyzer:
         self,
         company_id: str,
         max_depth: int = OWNERSHIP_CHAIN_MAX_DEPTH,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Return all owners (Person or Company) reachable via SHAREHOLDER_OF / SHARES_UBO
         from a given company, up to *max_depth* hops.
@@ -124,7 +125,7 @@ class OwnershipGraphAnalyzer:
         company_id: str,
         max_depth: int = SUPPLY_CHAIN_MAX_DEPTH,
         direction: str = "downstream",
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Return the supply / subcontract chain radiating from a company.
 
@@ -136,9 +137,13 @@ class OwnershipGraphAnalyzer:
         logger.debug(f"[supply_chain] {direction} chain for {company_id}")
 
         if direction == "downstream":
-            pattern = f"(root {{id: $company_id}})-[:SUBCONTRACTS_TO|SUPPLIES_TO*1..{max_depth}]->(node)"
+            pattern = (
+                f"(root {{id: $company_id}})-[:SUBCONTRACTS_TO|SUPPLIES_TO*1..{max_depth}]->(node)"
+            )
         else:
-            pattern = f"(node)-[:SUBCONTRACTS_TO|SUPPLIES_TO*1..{max_depth}]->(root {{id: $company_id}})"
+            pattern = (
+                f"(node)-[:SUBCONTRACTS_TO|SUPPLIES_TO*1..{max_depth}]->(root {{id: $company_id}})"
+            )
 
         results = self.conn.run_query(
             f"""
@@ -173,7 +178,7 @@ class OwnershipGraphAnalyzer:
         self,
         min_shared: int = BOARD_OVERLAP_MIN_SHARED,
         limit: int = 50,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Find company pairs that share ≥ *min_shared* board members.
 
@@ -214,7 +219,7 @@ class OwnershipGraphAnalyzer:
         min_len: int = CAROUSEL_MIN_CYCLE_LENGTH,
         max_len: int = CAROUSEL_MAX_CYCLE_LENGTH,
         limit: int = 20,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Detect cycles in the SUBCONTRACTS_TO / SUPPLIES_TO graph (carousel fraud).
 
@@ -236,7 +241,7 @@ class OwnershipGraphAnalyzer:
         logger.info("[carousel] SCC IDs not found, falling back to path query…")
         return self._detect_via_paths(min_len, max_len, limit)
 
-    def _detect_via_scc(self, limit: int) -> List[Dict]:
+    def _detect_via_scc(self, limit: int) -> list[dict]:
         """Fast carousel detection when GDS SCC IDs are available."""
         return self.conn.run_query(
             """
@@ -262,7 +267,7 @@ class OwnershipGraphAnalyzer:
             {"limit": limit},
         )
 
-    def _detect_via_paths(self, min_len: int, max_len: int, limit: int) -> List[Dict]:
+    def _detect_via_paths(self, min_len: int, max_len: int, limit: int) -> list[dict]:
         """Slower fallback: direct variable-length path cycle query."""
         results = self.conn.run_query(
             f"""
@@ -297,7 +302,7 @@ class OwnershipGraphAnalyzer:
         min_tender_wins: int = SHELL_COMPANY_TENDER_WIN_MIN,
         max_employees: int = SHELL_COMPANY_EMPLOYEE_THRESHOLD,
         limit: int = 50,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Score companies as potential shells.
 
@@ -351,8 +356,8 @@ class OwnershipGraphAnalyzer:
             """,
             {
                 "min_tender_wins": min_tender_wins,
-                "max_emp":         max_employees,
-                "limit":           limit,
+                "max_emp": max_employees,
+                "limit": limit,
             },
         )
         if not results:
@@ -366,9 +371,9 @@ class OwnershipGraphAnalyzer:
 
     def score_shell_companies_enhanced(
         self,
-        limit:         int  = 200,
+        limit: int = 200,
         store_results: bool = False,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Multi-factor shell company scoring using :class:`ShellCompanyDetector`.
 
@@ -396,20 +401,20 @@ class OwnershipGraphAnalyzer:
 
         logger.debug("[shell_scoring_enhanced] running")
         detector = ShellCompanyDetector(self.conn.driver)
-        results  = detector.score_all(limit=limit, store_results=store_results)
+        results = detector.score_all(limit=limit, store_results=store_results)
 
         # Convert to the standard list-of-dicts format used by callers
         return [
             {
-                "company_id":        r.company_id,
-                "company_name":      r.company_name,
-                "shell_score":       round(r.shell_score, 4),
-                "risk_tier":         r.risk_tier,
-                "tender_wins":       r.factors.get("tender_wins", 0),
-                "employee_count":    r.factors.get("max_employees", -1),
-                "ownership_depth":   r.factors.get("chain_depth", 0),
-                "component_scores":  r.component_scores,
-                "factors":           r.factors,
+                "company_id": r.company_id,
+                "company_name": r.company_name,
+                "shell_score": round(r.shell_score, 4),
+                "risk_tier": r.risk_tier,
+                "tender_wins": r.factors.get("tender_wins", 0),
+                "employee_count": r.factors.get("max_employees", -1),
+                "ownership_depth": r.factors.get("chain_depth", 0),
+                "component_scores": r.component_scores,
+                "factors": r.factors,
             }
             for r in results
         ]
@@ -420,7 +425,7 @@ class OwnershipGraphAnalyzer:
         self,
         company_id: str,
         max_depth: int = OWNERSHIP_CHAIN_MAX_DEPTH,
-    ) -> Dict:
+    ) -> dict:
         """
         Return all companies under the same ultimate beneficial owner as the
         given company.
@@ -460,24 +465,26 @@ class OwnershipGraphAnalyzer:
             return {"company_id": company_id, "ubos": [], "siblings": []}
 
         # Re-shape into a nested structure
-        ubos: Dict[str, Dict] = {}
+        ubos: dict[str, dict] = {}
         for row in siblings:
             uid = row["ubo_id"]
             if uid not in ubos:
                 ubos[uid] = {
-                    "ubo_id":   uid,
+                    "ubo_id": uid,
                     "ubo_name": row["ubo_name"],
                     "ubo_type": row["ubo_type"],
                     "siblings": [],
                 }
-            ubos[uid]["siblings"].append({
-                "id":         row["sibling_id"],
-                "name":       row["sibling_name"],
-                "risk_score": row["risk_score"],
-            })
+            ubos[uid]["siblings"].append(
+                {
+                    "id": row["sibling_id"],
+                    "name": row["sibling_name"],
+                    "risk_score": row["risk_score"],
+                }
+            )
 
         return {
             "company_id": company_id,
-            "ubos":       list(ubos.values()),
-            "siblings":   [s for u in ubos.values() for s in u["siblings"]],
+            "ubos": list(ubos.values()),
+            "siblings": [s for u in ubos.values() for s in u["siblings"]],
         }

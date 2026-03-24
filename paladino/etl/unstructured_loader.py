@@ -90,7 +90,9 @@ class UnstructuredGraphLoader:
 
         self._link_to_domain_nodes(document, key, entity.properties or {})
 
-    def _link_to_domain_nodes(self, document: ExtractedDocument, canonical_key: str, properties: dict) -> None:
+    def _link_to_domain_nodes(
+        self, document: ExtractedDocument, canonical_key: str, properties: dict
+    ) -> None:
         piva = str(properties.get("piva") or properties.get("vat_number") or "").strip()
         cf = str(properties.get("cf") or "").strip()
         cig = str(properties.get("cig") or "").strip()

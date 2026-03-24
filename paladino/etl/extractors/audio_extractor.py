@@ -27,7 +27,7 @@ class AudioExtractor:
         try:
             text = self._extract_local(path)
             method = f"faster-whisper:{self.local_model}"
-        except Exception as exc:
+        except Exception:
             if not self.use_api_fallback:
                 raise
             text = self._extract_api(path)

@@ -3,6 +3,7 @@ Unit tests for company name normalization.
 """
 
 import pytest
+
 from paladino.ml.name_normalizer import CompanyNameNormalizer
 
 
@@ -49,7 +50,7 @@ def test_multiple_spaces_collapsed(normalizer):
 def test_aggressive_normalization(normalizer):
     """Test aggressive normalization with abbreviations."""
     result = normalizer.normalize_aggressive("Acme Costruzioni Generale S.r.l.")
-    
+
     # ACME COSTR GEN
     assert "ACME" in result
     assert "COSTR" in result  # Abbreviation
@@ -60,7 +61,7 @@ def test_aggressive_normalization(normalizer):
 def test_core_name_extraction(normalizer):
     """Test core name extraction (first 3 words)."""
     result = normalizer.extract_core_name("Acme Costruzioni Generale Italiana S.r.l.")
-    
+
     # Should take first 3 significant words
     assert result == "ACME COSTRUZIONI GENERALE"
 
@@ -68,5 +69,5 @@ def test_core_name_extraction(normalizer):
 def test_core_name_short_input(normalizer):
     """Test core name with input shorter than 3 words."""
     result = normalizer.extract_core_name("Acme S.r.l.")
-    
+
     assert result == "ACME"

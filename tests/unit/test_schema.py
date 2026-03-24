@@ -2,9 +2,10 @@
 Unit tests for Neo4j schema management.
 """
 
-import pytest
-from unittest.mock import Mock, patch
 from pathlib import Path
+
+import pytest
+
 from paladino.schema_manager import SchemaManager
 
 
@@ -39,6 +40,7 @@ def test_indexes_created(mock_driver, schema_dir):
     manager = SchemaManager(mock_driver, schema_dir)
     indexes = manager.list_indexes()
     assert len(indexes) > 0
+
 
 def test_validate_schema(mock_driver, schema_dir):
     manager = SchemaManager(mock_driver, schema_dir)

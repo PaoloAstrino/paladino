@@ -3,16 +3,17 @@ GraphRAG agent - Multi-hop reasoning over knowledge graph.
 """
 
 import json
-from typing import List, Dict, Optional
-from neo4j import Driver
-from neo4j.exceptions import ServiceUnavailable, DatabaseUnavailable, DriverError
+
 from loguru import logger
+from neo4j import Driver
+from neo4j.exceptions import DatabaseUnavailable, DriverError, ServiceUnavailable
+
 from paladino.llm_manager import LLMManager
 
 
 class CypherQueryTemplates:
     """Pre-validated Cypher query templates."""
-    
+
     TEMPLATES = {
         "companies_by_region": """
             MATCH (c:Company)-[:LOCATED_IN]->(m:Municipality)-[:IN_REGION]->(r:Region {nome: $region})
@@ -20,21 +21,18 @@ class CypherQueryTemplates:
             ORDER BY c.total_tenders DESC
             LIMIT $limit
         """,
-        
         "pnrr_projects": """
             MATCH (p:Project)-[:FUNDED_BY]->(f:FundingSource {tipo: "PNRR"})
             RETURN p.cup, p.titolo, p.importo_finanziato, p.regione
             ORDER BY p.importo_finanziato DESC
             LIMIT $limit
         """,
-        
         "tender_to_project": """
             MATCH (c:Company {cf: $cf})-[:WINS]->(t:Tender)-[:PART_OF_PROJECT]->(p:Project)
             RETURN t.cig, t.oggetto, p.cup, p.titolo, t.importo
             ORDER BY t.importo DESC
             LIMIT $limit
         """,
-        
         "high_risk_companies": """
             MATCH (c:Company)
             WHERE c.risk_score > $min_risk
@@ -42,7 +40,6 @@ class CypherQueryTemplates:
             ORDER BY c.risk_score DESC
             LIMIT $limit
         """,
-        
         "regional_spending": """
             MATCH (c:Company)-[:LOCATED_IN]->(m:Municipality)-[:IN_REGION]->(r:Region)
             MATCH (c)-[:WINS]->(t:Tender)
@@ -51,7 +48,6 @@ class CypherQueryTemplates:
                    sum(t.importo) as total_importo
             ORDER BY total_importo DESC
         """,
-        
         "top_vendors": """
             MATCH (c:Company)-[:WINS]->(t:Tender)
             RETURN c.nome_originale as company,
@@ -61,7 +57,6 @@ class CypherQueryTemplates:
             ORDER BY tender_count DESC
             LIMIT $limit
         """,
-        
         "top_centrality_companies": """
             MATCH (c:Company)
             WHERE c.centrality_score IS NOT NULL
@@ -71,7 +66,6 @@ class CypherQueryTemplates:
             ORDER BY c.centrality_score DESC
             LIMIT $limit
         """,
-        
         "project_funding_analysis": """
             MATCH (p:Project)-[:FUNDED_BY]->(f:FundingSource)
             RETURN f.tipo as funding_source,
@@ -80,9 +74,7 @@ class CypherQueryTemplates:
             ORDER BY total_funding DESC
             LIMIT $limit
         """,
-
         # ── Supply-chain & corporate graph (2024 additions) ─────────────────
-
         "ownership_chain": """
             // Trace all shareholders / UBOs above a company up to max_depth hops.
             // Required param: cf (company fiscal code)
@@ -101,7 +93,6 @@ class CypherQueryTemplates:
             ORDER BY hops, owner_type
             LIMIT $limit
         """,
-
         "supply_chain": """
             // Show the downstream sub-contractor tree from a prime contractor.
             // Required param: cf (company fiscal code)
@@ -117,7 +108,6 @@ class CypherQueryTemplates:
             ORDER BY depth, sub_name
             LIMIT $limit
         """,
-
         "board_overlaps": """
             // Companies sharing board members, ranked by shared count.
             // Optional param: min_shared (default 1), limit
@@ -136,7 +126,6 @@ class CypherQueryTemplates:
             ORDER BY shared_count DESC
             LIMIT $limit
         """,
-
         "carousel_risk": """
             // Companies found inside supply-chain strongly-connected components
             // (carousel fraud candidates).  Requires GDS SCC to have been run.
@@ -152,9 +141,7 @@ class CypherQueryTemplates:
             ORDER BY cycle_size DESC
             LIMIT $limit
         """,
-
         # ── Temporal / time-series (2024 additions) ──────────────────────────
-
         "tender_volume_trend": """
             // Quarterly tender count + value for the whole graph or one winner.
             // Optional param: cf (company fiscal code), quarters (default 8)
@@ -175,7 +162,6 @@ class CypherQueryTemplates:
             ORDER BY cf, year ASC, quarter ASC
             LIMIT $limit
         """,
-
         "single_bidder_trend": """
             // Quarterly single-bidder ratio per company (rising ratio = red flag).
             // Optional param: cf (company fiscal code), months (derived from quarters)
@@ -199,7 +185,6 @@ class CypherQueryTemplates:
             ORDER BY cf, year ASC, quarter ASC
             LIMIT $limit
         """,
-
         "sector_spending_trend": """
             // Quarterly spending aggregation for one ATECO sector prefix.
             // Required param: ateco_prefix  e.g. "C28"
@@ -224,7 +209,6 @@ class CypherQueryTemplates:
             ORDER BY year ASC, quarter ASC
             LIMIT $limit
         """,
-
         "sudden_spikes": """
             // Companies with latest quarter > threshold × their rolling mean.
             // This query returns the raw quarterly data; spike math happens in Python.
@@ -244,25 +228,25 @@ class CypherQueryTemplates:
             LIMIT $limit
         """,
     }
-    
+
     @classmethod
-    def get_template(cls, template_name: str) -> Optional[str]:
+    def get_template(cls, template_name: str) -> str | None:
         """Get a query template by name."""
         return cls.TEMPLATES.get(template_name)
-    
+
     @classmethod
-    def list_templates(cls) -> List[str]:
+    def list_templates(cls) -> list[str]:
         """List all available templates."""
         return list(cls.TEMPLATES.keys())
 
 
 class GraphRAGAgent:
     """GraphRAG agent for multi-hop reasoning."""
-    
-    def __init__(self, driver: Driver, schema_metadata: Optional[str] = None):
+
+    def __init__(self, driver: Driver, schema_metadata: str | None = None):
         """
         Initialize agent.
-        
+
         Args:
             driver: Neo4j driver instance
             schema_metadata: Text description of the graph schema
@@ -271,42 +255,37 @@ class GraphRAGAgent:
         self.templates = CypherQueryTemplates()
         self.llm = LLMManager()
         self.schema_metadata = schema_metadata
-    
-    def query(
-        self,
-        template_name: str,
-        params: Optional[Dict] = None,
-        limit: int = 10
-    ) -> List[Dict]:
+
+    def query(self, template_name: str, params: dict | None = None, limit: int = 10) -> list[dict]:
         """
         Execute a templated query.
-        
+
         Args:
             template_name: Name of the template
             params: Query parameters
             limit: Result limit
-            
+
         Returns:
             List of result records
         """
         template = self.templates.get_template(template_name)
-        
+
         if not template:
             logger.error(f"Template not found: {template_name}")
             return []
-        
+
         # Merge default params
         query_params = params or {}
         if "limit" not in query_params:
             query_params["limit"] = limit
-        
+
         logger.info(f"Executing template: {template_name}")
-        
+
         try:
             with self.driver.session() as session:
                 result = session.run(template, **query_params)
                 records = [dict(r) for r in result]
-            
+
             logger.success(f"Retrieved {len(records)} results")
             return records
         except (ServiceUnavailable, DatabaseUnavailable, DriverError) as e:
@@ -319,7 +298,7 @@ class GraphRAGAgent:
                 "\nThen try again."
             ) from e
 
-    def execute_custom_cypher(self, cypher: str, params: Optional[Dict] = None) -> List[Dict]:
+    def execute_custom_cypher(self, cypher: str, params: dict | None = None) -> list[dict]:
         """Execute a raw Cypher query safely."""
         logger.info(f"Executing custom Cypher: {cypher}")
         try:
@@ -337,7 +316,7 @@ class GraphRAGAgent:
                 "\nThen try again."
             ) from e
 
-    def thematic_search(self, keyword: str, limit: int = 15) -> List[dict]:
+    def thematic_search(self, keyword: str, limit: int = 15) -> list[dict]:
         """
         High-performance keyword search using Neo4j Full-Text Index.
         More resource-efficient than Vectors for simple topic matching.
@@ -363,29 +342,29 @@ class GraphRAGAgent:
                 "  • Desktop: Open Neo4j Desktop and start the DBMS\n"
                 "\nThen try again."
             ) from e
-    
-    def generate_insight(self, question: str, results: List[Dict]) -> str:
+
+    def generate_insight(self, question: str, results: list[dict]) -> str:
         """Generate a natural language insight based on the data results."""
         if not results:
             return "No data found to analyze."
-            
+
         system_prompt = (
             "You are a strategic analyst. Based on the provided data from a Knowledge Graph "
             "and the user's question, provide a 2-sentence executive summary. "
             "Highlight any potential risks or interesting patterns (e.g., concentration of funds)."
         )
-        
+
         # Prepare data snippet for LLM (first 5 results to save tokens)
         data_snippet = json.dumps(results[:5], indent=2)
-        
+
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Question: {question}\nData: {data_snippet}"}
+            {"role": "user", "content": f"Question: {question}\nData: {data_snippet}"},
         ]
-        
+
         return self.llm.chat(messages)
 
-    def natural_language_query(self, question: str) -> Dict:
+    def natural_language_query(self, question: str) -> dict:
         """
         Process natural language question.
 
@@ -413,7 +392,7 @@ class GraphRAGAgent:
                     "template": template_name,
                     "params": params,
                     "results": results,
-                    "count": len(results)
+                    "count": len(results),
                 }
             except RuntimeError as e:
                 # Handle Neo4j connection errors with helpful message
@@ -424,8 +403,8 @@ class GraphRAGAgent:
                         "help": "Start Neo4j and try again:",
                         "instructions": [
                             "Docker: docker-compose -f infra/docker-compose.yml up -d",
-                            "Desktop: Open Neo4j Desktop and start the DBMS"
-                        ]
+                            "Desktop: Open Neo4j Desktop and start the DBMS",
+                        ],
                     }
                 raise
             except Exception as e:
@@ -437,45 +416,46 @@ class GraphRAGAgent:
 
                 # Format 1: "Expected parameter(s): cf, months"
                 import re
-                match = re.search(r'Expected parameter\(s\): ([^}]+)', error_msg)
+
+                match = re.search(r"Expected parameter\(s\): ([^}]+)", error_msg)
                 if match:
                     missing_params = match.group(1).strip()
 
                 # Format 2: Neo4j structured error
                 if not missing_params:
-                    match = re.search(r'Expected parameter\(s\): (.+?)\}', error_msg)
+                    match = re.search(r"Expected parameter\(s\): (.+?)\}", error_msg)
                     if match:
                         missing_params = match.group(1).strip()
 
                 if missing_params:
                     return {
                         "error": f"Missing required parameters: {missing_params}",
-                        "help": f"This template needs specific values. Try providing more details in your question.",
+                        "help": "This template needs specific values. Try providing more details in your question.",
                         "template": template_name,
                         "missing_params": missing_params,
-                        "example": f"Try: 'Show trends for company CF 12345678901 over 6 months'"
+                        "example": "Try: 'Show trends for company CF 12345678901 over 6 months'",
                     }
 
                 # Generic template error
                 return {
                     "error": f"Template execution failed: {error_msg}",
                     "help": "This template may require specific parameters. Try being more specific in your question.",
-                    "template": template_name
+                    "template": template_name,
                 }
-        
+
         # 2. Try dynamic Cypher generation
         elif self.schema_metadata:
             logger.info("No matching template. Attempting dynamic Cypher generation...")
-            
+
             cypher = self.llm.generate_cypher(question, self.schema_metadata)
             max_retries = 3
             attempt = 0
-            
+
             while attempt < max_retries:
                 attempt += 1
                 if not cypher:
                     break
-                    
+
                 try:
                     logger.info(f"Execution attempt {attempt} for: {cypher}")
                     results = self.execute_custom_cypher(cypher)
@@ -484,9 +464,9 @@ class GraphRAGAgent:
                         "cypher": cypher,
                         "attempts": attempt,
                         "results": results,
-                        "count": len(results)
+                        "count": len(results),
                     }
-                    break # Success!
+                    break  # Success!
                 except RuntimeError as e:
                     # Handle Neo4j connection errors
                     if "Neo4j Database is not running" in str(e):
@@ -496,8 +476,8 @@ class GraphRAGAgent:
                             "help": "Start Neo4j and try again:",
                             "instructions": [
                                 "Docker: docker-compose -f infra/docker-compose.yml up -d",
-                                "Desktop: Open Neo4j Desktop and start the DBMS"
-                            ]
+                                "Desktop: Open Neo4j Desktop and start the DBMS",
+                            ],
                         }
                     raise
                 except Exception as e:
@@ -513,8 +493,8 @@ class GraphRAGAgent:
         if final_result.get("results"):
             final_result["insight"] = self.generate_insight(question, final_result["results"])
             return final_result
-        
+
         return {
             "error": "I couldn't find a standard query or generate a safe one for that question.",
-            "available_templates": template_list
+            "available_templates": template_list,
         }

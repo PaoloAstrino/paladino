@@ -1,8 +1,7 @@
-
-import polars as pl
-from paladino.etl.opencup_transform import OpencupTransformer
-from paladino.etl.opencup_download import OpencupDownloader
 from pathlib import Path
+
+from paladino.etl.opencup_download import OpencupDownloader
+from paladino.etl.opencup_transform import OpencupTransformer
 
 file = Path("data/opencup/raw/OpenCup_Progetti1.csv")
 downloader = OpencupDownloader()

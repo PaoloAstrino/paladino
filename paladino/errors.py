@@ -11,8 +11,10 @@ from __future__ import annotations
 # Custom exception hierarchy
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class PaladinoError(Exception):
     """Base class for all Paladino errors."""
+
     def __init__(self, message: str, hint: str = ""):
         self.message = message
         self.hint = hint
@@ -80,6 +82,7 @@ class RateLimitedError(DownloadError):
 # ──────────────────────────────────────────────────────────────────────────────
 # User-friendly message builders
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def neo4j_offline_error(original: Exception | None = None) -> DatabaseError:
     """Build a user-friendly 'Neo4j not running' error."""

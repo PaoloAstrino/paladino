@@ -1,9 +1,16 @@
 from pathlib import Path
-from typing import Optional, List
+
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_VALID_NEO4J_SCHEMES = ("bolt://", "bolt+s://", "bolt+ssc://", "neo4j://", "neo4j+s://", "neo4j+ssc://")
+_VALID_NEO4J_SCHEMES = (
+    "bolt://",
+    "bolt+s://",
+    "bolt+ssc://",
+    "neo4j://",
+    "neo4j+s://",
+    "neo4j+ssc://",
+)
 
 
 class Settings(BaseSettings):
@@ -19,14 +26,14 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
 
     # LLM Settings (Universal)
-    llm_api_key: Optional[str] = None
-    llm_api_base: Optional[str] = None
+    llm_api_key: str | None = None
+    llm_api_base: str | None = None
     llm_model: str = "llama3.2"
 
     # External API Keys (convenience aliases)
-    openai_api_key: Optional[str] = None
-    groq_api_key: Optional[str] = None
-    anthropic_api_key: Optional[str] = None
+    openai_api_key: str | None = None
+    groq_api_key: str | None = None
+    anthropic_api_key: str | None = None
 
     embedding_dimensions: int = 768
 
@@ -41,7 +48,7 @@ class Settings(BaseSettings):
     data_dir: Path = base_dir / "data"
 
     # SECURITY FIX (SEC-002, SEC-005): API authentication and CORS
-    api_keys: Optional[str] = Field(
+    api_keys: str | None = Field(
         default=None,
         description="Comma-separated list of valid API keys",
     )
@@ -49,11 +56,11 @@ class Settings(BaseSettings):
         default="http://localhost:3000,http://localhost:8000",
         description="Comma-separated list of allowed CORS origins",
     )
-    
+
     # Rate limiting
     api_rate_limit: str = "100/minute"
     api_rate_limit_unauthenticated: str = "20/minute"
-    
+
     # Audit logging
     enable_audit_logging: bool = True
     audit_retention_days: int = 90
@@ -68,7 +75,7 @@ class Settings(BaseSettings):
         env_file=Path(__file__).parent.parent / ".env",
         env_file_encoding="utf-8",
         env_prefix="PALADINO_",
-        extra="ignore"
+        extra="ignore",
     )
 
     # ── validators ────────────────────────────────────────────────────────────
@@ -80,8 +87,7 @@ class Settings(BaseSettings):
         if not any(v.startswith(scheme) for scheme in _VALID_NEO4J_SCHEMES):
             valid = ", ".join(_VALID_NEO4J_SCHEMES)
             raise ValueError(
-                f"NEO4J_URI has an invalid scheme: {v!r}. "
-                f"Must start with one of: {valid}"
+                f"NEO4J_URI has an invalid scheme: {v!r}. Must start with one of: {valid}"
             )
         return v
 

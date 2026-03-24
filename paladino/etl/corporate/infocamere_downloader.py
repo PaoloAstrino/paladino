@@ -39,22 +39,21 @@ Or via the CLI::
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Dict, List, Optional
-from urllib.request import urlopen, Request
-from urllib.error import URLError, HTTPError
-import json
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from loguru import logger
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
-from rich import box
 
 _console = Console()
 
@@ -63,31 +62,34 @@ _console = Console()
 # Data-classes
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class DownloadResult:
     """Outcome of a single download attempt."""
-    source:       str
-    success:      bool
-    file_path:    Optional[Path] = None
+
+    source: str
+    success: bool
+    file_path: Path | None = None
     rows_written: int = 0
-    error:        Optional[str] = None
-    skipped:      bool = False
-    skip_reason:  Optional[str] = None
+    error: str | None = None
+    skipped: bool = False
+    skip_reason: str | None = None
 
 
 @dataclass
 class FetchSummary:
     """Aggregated summary of a full fetch run."""
-    downloads:      List[DownloadResult] = field(default_factory=list)
-    started_at:     Optional[datetime] = None
-    finished_at:    Optional[datetime] = None
+
+    downloads: list[DownloadResult] = field(default_factory=list)
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
 
     @property
-    def successful(self) -> List[DownloadResult]:
+    def successful(self) -> list[DownloadResult]:
         return [d for d in self.downloads if d.success]
 
     @property
-    def failed(self) -> List[DownloadResult]:
+    def failed(self) -> list[DownloadResult]:
         return [d for d in self.downloads if not d.success and not d.skipped]
 
     @property
@@ -107,12 +109,16 @@ class FetchSummary:
 
 # ANAC dataset catalogue — we look for datasets related to company subjects
 _ANAC_CATALOGUE_URL = "https://dati.anticorruzione.it/opendata/api/3/action/package_list"
-_ANAC_DATASET_BASE  = "https://dati.anticorruzione.it/opendata/api/3/action/package_show?id="
+_ANAC_DATASET_BASE = "https://dati.anticorruzione.it/opendata/api/3/action/package_show?id="
 
 # Names/keywords that identify procurement-subject datasets
 _SUBJECT_KEYWORDS = [
-    "soggetti", "aggiudicatari", "imprese", "operatori_economici",
-    "subappaltatori", "partecipanti",
+    "soggetti",
+    "aggiudicatari",
+    "imprese",
+    "operatori_economici",
+    "subappaltatori",
+    "partecipanti",
 ]
 
 _REQUEST_TIMEOUT_SEC = 30
@@ -120,11 +126,13 @@ _RETRY_ATTEMPTS = 3
 _RETRY_DELAY_SEC = 5
 
 
-def _http_get(url: str, timeout: int = _REQUEST_TIMEOUT_SEC) -> Optional[bytes]:
+def _http_get(url: str, timeout: int = _REQUEST_TIMEOUT_SEC) -> bytes | None:
     """Attempt a GET request; return bytes or None on failure."""
     for attempt in range(1, _RETRY_ATTEMPTS + 1):
         try:
-            req = Request(url, headers={"User-Agent": "paladino/1.0 (Italian public spending analysis)"})
+            req = Request(
+                url, headers={"User-Agent": "paladino/1.0 (Italian public spending analysis)"}
+            )
             with urlopen(req, timeout=timeout) as resp:
                 return resp.read()
         except HTTPError as exc:
@@ -141,6 +149,7 @@ def _http_get(url: str, timeout: int = _REQUEST_TIMEOUT_SEC) -> Optional[bytes]:
 # ─────────────────────────────────────────────────────────────────────────────
 # Main fetcher
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class RegistroImpreseFetcher:
     """
@@ -163,11 +172,11 @@ class RegistroImpreseFetcher:
         data_dir: Path,
         dry_run: bool = False,
     ) -> None:
-        self.data_dir  = data_dir
-        self.raw_dir   = data_dir / "corporate" / "raw"
-        self.dry_run   = dry_run
-        self._atoka_key     = os.environ.get("ATOKA_API_KEY", "")
-        self._opencorp_key  = os.environ.get("OPENCORPORATES_API_KEY", "")
+        self.data_dir = data_dir
+        self.raw_dir = data_dir / "corporate" / "raw"
+        self.dry_run = dry_run
+        self._atoka_key = os.environ.get("ATOKA_API_KEY", "")
+        self._opencorp_key = os.environ.get("OPENCORPORATES_API_KEY", "")
 
     # ── public API ───────────────────────────────────────────────────────────
 
@@ -178,7 +187,7 @@ class RegistroImpreseFetcher:
         Order: ANAC OpenData → ATOKA (if key) → OpenCorporates (if key).
         Local CSVs already in raw_dir are detected by discovery, not here.
         """
-        summary = FetchSummary(started_at=datetime.now(timezone.utc))
+        summary = FetchSummary(started_at=datetime.now(UTC))
 
         if not self.dry_run:
             self.raw_dir.mkdir(parents=True, exist_ok=True)
@@ -208,27 +217,29 @@ class RegistroImpreseFetcher:
             summary.downloads.append(self._fetch_opencorporates())
             progress.advance(task)
 
-        summary.finished_at = datetime.now(timezone.utc)
+        summary.finished_at = datetime.now(UTC)
         return summary
 
     def print_summary(self, summary: FetchSummary) -> None:
         """Display a rich table of fetch results."""
-        tbl = Table(title="Registro Imprese / Corporate Data Fetch", box=box.ROUNDED, show_lines=True)
-        tbl.add_column("Source",       style="cyan")
-        tbl.add_column("Status",       style="bold")
-        tbl.add_column("Rows",         justify="right")
+        tbl = Table(
+            title="Registro Imprese / Corporate Data Fetch", box=box.ROUNDED, show_lines=True
+        )
+        tbl.add_column("Source", style="cyan")
+        tbl.add_column("Status", style="bold")
+        tbl.add_column("Rows", justify="right")
         tbl.add_column("File / Notes")
 
         for r in summary.downloads:
             if r.skipped:
                 status = "[dim]SKIPPED[/dim]"
-                note   = r.skip_reason or ""
+                note = r.skip_reason or ""
             elif r.success:
                 status = "[green]OK[/green]"
-                note   = str(r.file_path.name) if r.file_path else ""
+                note = str(r.file_path.name) if r.file_path else ""
             else:
                 status = "[red]FAILED[/red]"
-                note   = r.error or ""
+                note = r.error or ""
             tbl.add_row(r.source, status, str(r.rows_written), note)
 
         _console.print(tbl)
@@ -238,53 +249,60 @@ class RegistroImpreseFetcher:
         )
 
         if not summary.successful:
-            _console.print(Panel(
-                _NO_DATA_GUIDANCE,
-                title="[bold yellow]No data fetched — manual setup required[/bold yellow]",
-                border_style="yellow",
-                expand=False,
-            ))
+            _console.print(
+                Panel(
+                    _NO_DATA_GUIDANCE,
+                    title="[bold yellow]No data fetched — manual setup required[/bold yellow]",
+                    border_style="yellow",
+                    expand=False,
+                )
+            )
 
     # ── ANAC OpenData ─────────────────────────────────────────────────────────
 
-    def _fetch_anac_subjects(self) -> List[DownloadResult]:
+    def _fetch_anac_subjects(self) -> list[DownloadResult]:
         """
         Query the ANAC CKAN catalogue for subject/company datasets and
         download matching CSVs into raw_dir.
 
         Returns one DownloadResult per file attempted.
         """
-        results: List[DownloadResult] = []
+        results: list[DownloadResult] = []
 
         logger.info("[fetch] Querying ANAC catalogue…")
         raw = _http_get(_ANAC_CATALOGUE_URL)
         if raw is None:
-            return [DownloadResult(
-                source="ANAC OpenData",
-                success=False,
-                error="Cannot reach dati.anticorruzione.it — check your internet connection",
-            )]
+            return [
+                DownloadResult(
+                    source="ANAC OpenData",
+                    success=False,
+                    error="Cannot reach dati.anticorruzione.it — check your internet connection",
+                )
+            ]
 
         try:
             catalogue = json.loads(raw)
-            dataset_ids: List[str] = catalogue.get("result", [])
+            dataset_ids: list[str] = catalogue.get("result", [])
         except (json.JSONDecodeError, KeyError) as exc:
             return [DownloadResult(source="ANAC OpenData", success=False, error=str(exc))]
 
         # Filter by subject-related keywords
         matching = [
-            name for name in dataset_ids
-            if any(kw in name.lower() for kw in _SUBJECT_KEYWORDS)
+            name for name in dataset_ids if any(kw in name.lower() for kw in _SUBJECT_KEYWORDS)
         ]
-        logger.info(f"[fetch] ANAC catalogue: {len(dataset_ids)} datasets, {len(matching)} matching")
+        logger.info(
+            f"[fetch] ANAC catalogue: {len(dataset_ids)} datasets, {len(matching)} matching"
+        )
 
         if not matching:
-            return [DownloadResult(
-                source="ANAC OpenData",
-                success=False,
-                skipped=True,
-                skip_reason="No matching subject datasets in catalogue",
-            )]
+            return [
+                DownloadResult(
+                    source="ANAC OpenData",
+                    success=False,
+                    skipped=True,
+                    skip_reason="No matching subject datasets in catalogue",
+                )
+            ]
 
         for dataset_id in matching[:5]:  # limit to avoid hammering the API
             result = self._download_anac_dataset(dataset_id)
@@ -322,14 +340,14 @@ class RegistroImpreseFetcher:
                 skip_reason="No CSV resource in dataset",
             )
 
-        url      = csv_resource["url"]
+        url = csv_resource["url"]
         filename = Path(url).name or f"{dataset_id}.csv"
-        dest     = self.raw_dir / filename
+        dest = self.raw_dir / filename
 
         # Skip if already up-to-date (same-day download)
         if dest.exists():
-            mtime = datetime.fromtimestamp(dest.stat().st_mtime, tz=timezone.utc)
-            age_hours = (datetime.now(timezone.utc) - mtime).total_seconds() / 3600
+            mtime = datetime.fromtimestamp(dest.stat().st_mtime, tz=UTC)
+            age_hours = (datetime.now(UTC) - mtime).total_seconds() / 3600
             if age_hours < 24:
                 return DownloadResult(
                     source=f"ANAC/{dataset_id}",

@@ -2,10 +2,12 @@
 Integration tests for FastAPI endpoints.
 """
 
+import json
+
 import pytest
 from fastapi.testclient import TestClient
+
 from paladino.app.api import app
-import json
 
 
 @pytest.fixture
@@ -17,10 +19,10 @@ def client():
 def test_root_endpoint(client):
     """Test root endpoint returns API info."""
     response = client.get("/")
-    
+
     assert response.status_code == 200
     data = response.json()
-    
+
     assert "name" in data
     assert "version" in data
     assert "endpoints" in data
@@ -29,10 +31,10 @@ def test_root_endpoint(client):
 def test_health_endpoint_success(client, clean_neo4j):
     """Test health endpoint with healthy Neo4j."""
     response = client.get("/health")
-    
+
     assert response.status_code == 200
     data = response.json()
-    
+
     assert data["status"] == "healthy"
     assert data["neo4j"] == "connected"
 
@@ -40,10 +42,10 @@ def test_health_endpoint_success(client, clean_neo4j):
 def test_list_templates_endpoint(client):
     """Test templates listing endpoint."""
     response = client.get("/templates")
-    
+
     assert response.status_code == 200
     data = response.json()
-    
+
     assert "templates" in data
     assert "count" in data
     assert len(data["templates"]) >= 5
@@ -62,17 +64,16 @@ def test_template_query_endpoint(client, clean_neo4j):
                 source: 'TEST'
             })
         """)
-    
+
     # Execute template query
-    response = client.post("/template", json={
-        "template_name": "high_risk_companies",
-        "params": {"min_risk": 0.5},
-        "limit": 10
-    })
-    
+    response = client.post(
+        "/template",
+        json={"template_name": "high_risk_companies", "params": {"min_risk": 0.5}, "limit": 10},
+    )
+
     assert response.status_code == 200
     data = response.json()
-    
+
     assert data["template"] == "high_risk_companies"
     assert data["count"] >= 1
     assert len(data["results"]) >= 1
@@ -86,7 +87,7 @@ def test_natural_language_query_endpoint(client, clean_neo4j, mock_ollama):
             "content": '{"template_name": "high_risk_companies", "params": {"min_risk": 0.5}}'
         }
     }
-    
+
     # Create test data
     with clean_neo4j.session() as session:
         session.run("""
@@ -96,15 +97,12 @@ def test_natural_language_query_endpoint(client, clean_neo4j, mock_ollama):
                 source: 'TEST'
             })
         """)
-    
-    response = client.post("/query", json={
-        "question": "Show me high risk companies",
-        "limit": 10
-    })
-    
+
+    response = client.post("/query", json={"question": "Show me high risk companies", "limit": 10})
+
     assert response.status_code == 200
     data = response.json()
-    
+
     assert "template" in data
     assert "results" in data
 
@@ -124,12 +122,12 @@ def test_get_company_endpoint(client, clean_neo4j):
             CREATE (c)-[:LOCATED_IN]->(m)
             CREATE (m)-[:IN_REGION]->(r)
         """)
-    
+
     response = client.get("/companies/TEST123")
-    
+
     assert response.status_code == 200
     data = response.json()
-    
+
     assert data["company"]["cf"] == "TEST123"
     assert data["location"]["municipality"] == "Roma"
     assert data["location"]["region"] == "Lazio"
@@ -138,7 +136,7 @@ def test_get_company_endpoint(client, clean_neo4j):
 def test_get_company_not_found(client, clean_neo4j):
     """Test get company returns 404 for nonexistent CF."""
     response = client.get("/companies/NONEXISTENT")
-    
+
     assert response.status_code == 404
 
 
@@ -151,17 +149,17 @@ def test_stats_endpoint(client, clean_neo4j):
             CREATE (t:Tender {cig: 'T1', source: 'TEST'})
             CREATE (c)-[:WINS]->(t)
         """)
-    
+
     response = client.get("/stats")
-    
+
     assert response.status_code == 200
     data = response.json()
-    
+
     assert "nodes" in data
     assert "relationships" in data
     assert "total_nodes" in data
     assert "total_relationships" in data
-    
+
     assert data["nodes"]["Company"] >= 1
     assert data["nodes"]["Tender"] >= 1
     assert data["relationships"]["WINS"] >= 1
@@ -169,12 +167,15 @@ def test_stats_endpoint(client, clean_neo4j):
 
 def test_unstructured_ingest_endpoint_structured_bypass(client):
     """Known structured source should be bypassed and routed to ETL hint."""
-    response = client.post("/ingest/unstructured", json={
-        "source": "data/pnnr/PNRR_Soggetti.csv",
-        "to_neo4j": False,
-        "max_chars": 2000,
-        "chunk_overlap": 100,
-    })
+    response = client.post(
+        "/ingest/unstructured",
+        json={
+            "source": "data/pnnr/PNRR_Soggetti.csv",
+            "to_neo4j": False,
+            "max_chars": 2000,
+            "chunk_overlap": 100,
+        },
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -189,7 +190,7 @@ def test_unstructured_ingest_endpoint_processes_text_with_mocked_ner(client, tmp
     source_file = tmp_path / "note.txt"
     source_file.write_text("Mario Rossi lavora per Edilizia Rossi SRL", encoding="utf-8")
 
-    from paladino.etl.unstructured_models import NERResult, ExtractedEntity, ExtractedRelationship
+    from paladino.etl.unstructured_models import ExtractedEntity, ExtractedRelationship, NERResult
 
     class FakePipeline:
         def __init__(self, *args, **kwargs):
@@ -223,12 +224,15 @@ def test_unstructured_ingest_endpoint_processes_text_with_mocked_ner(client, tmp
 
     monkeypatch.setattr("paladino.etl.ner_pipeline.UnstructuredNERPipeline", FakePipeline)
 
-    response = client.post("/ingest/unstructured", json={
-        "source": str(source_file),
-        "to_neo4j": False,
-        "max_chars": 2000,
-        "chunk_overlap": 100,
-    })
+    response = client.post(
+        "/ingest/unstructured",
+        json={
+            "source": str(source_file),
+            "to_neo4j": False,
+            "max_chars": 2000,
+            "chunk_overlap": 100,
+        },
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -239,12 +243,14 @@ def test_unstructured_ingest_endpoint_processes_text_with_mocked_ner(client, tmp
     assert data["extraction"]["relationships"] == 1
 
 
-def test_unstructured_ingest_endpoint_loads_to_neo4j_with_mocked_loader(client, tmp_path, monkeypatch):
+def test_unstructured_ingest_endpoint_loads_to_neo4j_with_mocked_loader(
+    client, tmp_path, monkeypatch
+):
     """Unstructured source with to_neo4j=true should return load stats from loader."""
     source_file = tmp_path / "note2.txt"
     source_file.write_text("Azienda X collegata a Mario", encoding="utf-8")
 
-    from paladino.etl.unstructured_models import NERResult, ExtractedEntity, ExtractedRelationship
+    from paladino.etl.unstructured_models import ExtractedEntity, ExtractedRelationship, NERResult
 
     class FakePipeline:
         def __init__(self, *args, **kwargs):
@@ -286,12 +292,15 @@ def test_unstructured_ingest_endpoint_loads_to_neo4j_with_mocked_loader(client, 
     monkeypatch.setattr("paladino.etl.ner_pipeline.UnstructuredNERPipeline", FakePipeline)
     monkeypatch.setattr("paladino.etl.unstructured_loader.UnstructuredGraphLoader", FakeLoader)
 
-    response = client.post("/ingest/unstructured", json={
-        "source": str(source_file),
-        "to_neo4j": True,
-        "max_chars": 2000,
-        "chunk_overlap": 100,
-    })
+    response = client.post(
+        "/ingest/unstructured",
+        json={
+            "source": str(source_file),
+            "to_neo4j": True,
+            "max_chars": 2000,
+            "chunk_overlap": 100,
+        },
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -303,12 +312,15 @@ def test_unstructured_ingest_endpoint_loads_to_neo4j_with_mocked_loader(client, 
 
 def test_unstructured_ingest_endpoint_rejects_invalid_chunk_overlap(client):
     """chunk_overlap must be lower than max_chars and return validation error otherwise."""
-    response = client.post("/ingest/unstructured", json={
-        "source": "data/pnnr/PNRR_Soggetti.csv",
-        "to_neo4j": False,
-        "max_chars": 100,
-        "chunk_overlap": 100,
-    })
+    response = client.post(
+        "/ingest/unstructured",
+        json={
+            "source": "data/pnnr/PNRR_Soggetti.csv",
+            "to_neo4j": False,
+            "max_chars": 100,
+            "chunk_overlap": 100,
+        },
+    )
 
     assert response.status_code == 422
 
@@ -318,15 +330,18 @@ def test_custom_csv_ingest_endpoint_dry_run_preview(client, tmp_path):
     source_file = tmp_path / "custom_companies.csv"
     source_file.write_text("vat_id,company_name\n01234567890,EDIL ROSSI SRL\n", encoding="utf-8")
 
-    response = client.post("/ingest/custom-csv", json={
-        "source": str(source_file),
-        "target": "company",
-        "mapping": {
-            "piva": "vat_id",
-            "nome_normalizzato": "company_name",
+    response = client.post(
+        "/ingest/custom-csv",
+        json={
+            "source": str(source_file),
+            "target": "company",
+            "mapping": {
+                "piva": "vat_id",
+                "nome_normalizzato": "company_name",
+            },
+            "dry_run": True,
         },
-        "dry_run": True,
-    })
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -362,15 +377,18 @@ def test_custom_csv_ingest_endpoint_import_with_mocked_importer(client, monkeypa
 
     monkeypatch.setattr("paladino.etl.custom_csv_importer.CustomCSVImporter", FakeImporter)
 
-    response = client.post("/ingest/custom-csv", json={
-        "source": "data/custom/my_companies.csv",
-        "target": "company",
-        "mapping": {
-            "piva": "vat_id",
-            "nome_normalizzato": "company_name",
+    response = client.post(
+        "/ingest/custom-csv",
+        json={
+            "source": "data/custom/my_companies.csv",
+            "target": "company",
+            "mapping": {
+                "piva": "vat_id",
+                "nome_normalizzato": "company_name",
+            },
+            "dry_run": False,
         },
-        "dry_run": False,
-    })
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -457,15 +475,18 @@ def test_custom_csv_ingest_tender_requires_importo_mapping(client, tmp_path):
     source_file = tmp_path / "custom_tenders.csv"
     source_file.write_text("cig_code,title\nCIG-777,Works\n", encoding="utf-8")
 
-    response = client.post("/ingest/custom-csv", json={
-        "source": str(source_file),
-        "target": "tender",
-        "mapping": {
-            "cig": "cig_code",
-            "title": "title",
+    response = client.post(
+        "/ingest/custom-csv",
+        json={
+            "source": str(source_file),
+            "target": "tender",
+            "mapping": {
+                "cig": "cig_code",
+                "title": "title",
+            },
+            "dry_run": False,
         },
-        "dry_run": False,
-    })
+    )
 
     assert response.status_code == 400
     assert "importo" in response.json()["detail"]

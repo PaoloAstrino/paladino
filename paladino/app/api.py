@@ -14,36 +14,30 @@ SECURITY FIXES APPLIED:
 - REL-006: Cypher query validation
 """
 
-from fastapi import FastAPI, HTTPException, Query, Path as FastAPIPath, UploadFile, File, Form, Depends, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field, field_validator
-from typing import Optional, List, Dict, Any
-from loguru import logger
-import json
-import tempfile
 import time
 from datetime import datetime
-
-from paladino.db import get_driver
-from paladino.app.graphrag_agent import GraphRAGAgent
-from paladino.schema_manager import SchemaManager
-from paladino.config import settings
 from pathlib import Path
+from typing import Any
+
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from loguru import logger
+from pydantic import BaseModel, Field, field_validator
+
+from paladino.app.graphrag_agent import GraphRAGAgent
 
 # Import security modules
 from paladino.app.security import (
-    verify_api_key,
-    require_auth,
+    query_auditor,
     rate_limit_middleware,
     request_id_middleware,
     security_headers_middleware,
-    query_auditor,
-    APIError,
     standardized_error_handler,
+    verify_api_key,
 )
-from paladino.app.cypher_validator import CypherValidator
+from paladino.config import settings
+from paladino.db import get_driver
+from paladino.schema_manager import SchemaManager
 
 # =============================================================================
 # Initialize FastAPI with security configuration
@@ -62,7 +56,9 @@ app = FastAPI(
 # =============================================================================
 
 # Parse allowed origins from environment variable
-allowed_origins = [origin.strip() for origin in settings.allowed_origins.split(",") if origin.strip()]
+allowed_origins = [
+    origin.strip() for origin in settings.allowed_origins.split(",") if origin.strip()
+]
 
 # Validate that wildcard is not in production
 if "*" in allowed_origins:
@@ -96,10 +92,12 @@ app.middleware("http")(rate_limit_middleware)
 # Exception Handlers - Standardized Error Responses
 # =============================================================================
 
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Handle all unhandled exceptions with standardized error response."""
     return await standardized_error_handler(request, exc)
+
 
 # =============================================================================
 # Initialize agent with schema metadata
@@ -115,9 +113,12 @@ agent = GraphRAGAgent(driver, schema_metadata=schema_metadata)
 # Request/Response Models
 # =============================================================================
 
+
 class QueryRequest(BaseModel):
-    question: str = Field(..., min_length=1, max_length=1000, description="Natural language question")
-    limit: Optional[int] = Field(default=10, ge=1, le=1000, description="Maximum results to return")
+    question: str = Field(
+        ..., min_length=1, max_length=1000, description="Natural language question"
+    )
+    limit: int | None = Field(default=10, ge=1, le=1000, description="Maximum results to return")
 
     @field_validator("question")
     @classmethod
@@ -133,14 +134,14 @@ class QueryRequest(BaseModel):
 
 class TemplateQueryRequest(BaseModel):
     template_name: str = Field(..., min_length=1, max_length=100, description="Template name")
-    params: Optional[Dict] = Field(default_factory=dict, description="Template parameters")
-    limit: Optional[int] = Field(default=10, ge=1, le=1000, description="Maximum results to return")
+    params: dict | None = Field(default_factory=dict, description="Template parameters")
+    limit: int | None = Field(default=10, ge=1, le=1000, description="Maximum results to return")
 
 
 class QueryResponse(BaseModel):
-    results: List[Dict]
+    results: list[dict]
     count: int
-    template: Optional[str] = None
+    template: str | None = None
 
 
 class IngestRequest(BaseModel):
@@ -160,25 +161,27 @@ class IngestRequest(BaseModel):
 
 class IngestResponse(BaseModel):
     mode: str
-    routing: Dict
-    extraction: Optional[Dict] = None
-    load_stats: Optional[Dict] = None
+    routing: dict
+    extraction: dict | None = None
+    load_stats: dict | None = None
 
 
 class CustomCSVIngestRequest(BaseModel):
     source: str = Field(..., min_length=1, max_length=2048, description="Path to CSV file")
     target: str = Field(..., description="Target node type: company | tender | project")
-    mapping: Dict[str, str] = Field(
+    mapping: dict[str, str] = Field(
         ...,
         description="Map graph properties to CSV columns. Example: {'piva': 'vat_id', 'nome': 'company_name'}",
     )
-    key_property: Optional[str] = Field(
+    key_property: str | None = Field(
         default=None,
         description="Graph property used as merge key. Defaults inferred by target",
     )
-    delimiter: Optional[str] = Field(default=None, description="CSV delimiter override (',' or ';')")
-    dry_run: bool = Field(default=False, description="Validate and preview mapping without writing to Neo4j")
-    max_rows: Optional[int] = Field(
+    delimiter: str | None = Field(default=None, description="CSV delimiter override (',' or ';')")
+    dry_run: bool = Field(
+        default=False, description="Validate and preview mapping without writing to Neo4j"
+    )
+    max_rows: int | None = Field(
         default=None,
         ge=1,
         le=500000,
@@ -196,7 +199,7 @@ class CustomCSVIngestRequest(BaseModel):
 
     @field_validator("mapping")
     @classmethod
-    def validate_mapping(cls, value: Dict[str, str]) -> Dict[str, str]:
+    def validate_mapping(cls, value: dict[str, str]) -> dict[str, str]:
         if not value:
             raise ValueError("mapping must not be empty")
         invalid = [k for k, v in value.items() if not str(k).strip() or not str(v).strip()]
@@ -206,7 +209,7 @@ class CustomCSVIngestRequest(BaseModel):
 
     @field_validator("delimiter")
     @classmethod
-    def validate_delimiter(cls, value: Optional[str]) -> Optional[str]:
+    def validate_delimiter(cls, value: str | None) -> str | None:
         if value is None:
             return value
         if value not in {",", ";"}:
@@ -219,11 +222,11 @@ class CustomCSVIngestResponse(BaseModel):
     target: str
     source: str
     delimiter: str
-    headers: List[str]
+    headers: list[str]
     rows_total: int
     effective_key_property: str
-    preview: Optional[List[Dict[str, Any]]] = None
-    stats: Optional[Dict[str, int]] = None
+    preview: list[dict[str, Any]] | None = None
+    stats: dict[str, int] | None = None
 
 
 class UBOReportRequest(BaseModel):
@@ -280,14 +283,14 @@ class ExplainRequest(BaseModel):
 
 
 class ExplainResponse(BaseModel):
-    company_id:   str
+    company_id: str
     company_name: str
-    risk_score:   float
-    risk_tier:    str
-    trend:        str
-    summary:      str
-    format:       str
-    report:       str
+    risk_score: float
+    risk_tier: str
+    trend: str
+    summary: str
+    format: str
+    report: str
     generated_at: str
 
 
@@ -301,7 +304,7 @@ class RecommendRequest(BaseModel):
         max_length=64,
         description="Company node id or Codice Fiscale (CF)",
     )
-    strategies: Optional[List[str]] = Field(
+    strategies: list[str] | None = Field(
         default=None,
         description=(
             "Recommendation strategies to apply. "
@@ -328,7 +331,7 @@ class RecommendRequest(BaseModel):
 
     @field_validator("strategies")
     @classmethod
-    def validate_strategies(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+    def validate_strategies(cls, v: list[str] | None) -> list[str] | None:
         if v is None:
             return v
         unknown = set(v) - _VALID_REC_STRATEGIES
@@ -351,20 +354,21 @@ class RecommendRequest(BaseModel):
 
 
 class RecommendResponse(BaseModel):
-    source_company_id:   str
+    source_company_id: str
     source_company_name: str
-    source_risk_score:   float
-    source_risk_tier:    str
-    recommendations:     List[Dict]
-    strategies_used:     List[str]
-    format:              str
-    report:              str
-    generated_at:        str
+    source_risk_score: float
+    source_risk_tier: str
+    recommendations: list[dict]
+    strategies_used: list[str]
+    format: str
+    report: str
+    generated_at: str
 
 
 # =============================================================================
 # Endpoints
 # =============================================================================
+
 
 @app.get("/")
 async def root():
@@ -381,7 +385,7 @@ async def root():
             "live": "/live",
             "ingest_unstructured": "/ingest/unstructured",
             "ingest_custom_csv": "/ingest/custom-csv",
-        }
+        },
     }
 
 
@@ -389,7 +393,7 @@ async def root():
 async def health():
     """
     Health check endpoint.
-    
+
     Returns comprehensive health status including all dependencies.
     """
     try:
@@ -399,7 +403,7 @@ async def health():
             "neo4j": "connected",
             "timestamp": datetime.utcnow().isoformat(),
         }
-    except Exception as e:
+    except Exception:
         # SECURITY FIX (SEC-013): Don't leak error details
         logger.error("Health check failed")
         raise HTTPException(
@@ -429,18 +433,18 @@ async def list_templates():
     """List all available query templates."""
     return {
         "templates": agent.templates.list_templates(),
-        "count": len(agent.templates.list_templates())
+        "count": len(agent.templates.list_templates()),
     }
 
 
 @app.post("/query", response_model=QueryResponse)
 async def natural_language_query(
     request: QueryRequest,
-    api_key: Optional[str] = Depends(verify_api_key),
+    api_key: str | None = Depends(verify_api_key),
 ):
     """
     Process natural language query.
-    
+
     Example:
     ```
     POST /query
@@ -451,8 +455,8 @@ async def natural_language_query(
     ```
     """
     start_time = time.time()
-    request_id = getattr(request, 'state', None)
-    
+    request_id = getattr(request, "state", None)
+
     try:
         result = agent.natural_language_query(request.question)
 
@@ -480,15 +484,13 @@ async def natural_language_query(
         )
 
         return QueryResponse(
-            results=result["results"],
-            count=result["count"],
-            template=result.get("template")
+            results=result["results"], count=result["count"], template=result.get("template")
         )
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Query failed")
+    except Exception:
+        logger.error("Query failed")
         # SECURITY FIX (SEC-013): Don't leak error details
         raise HTTPException(status_code=500, detail="Query processing failed")
 
@@ -496,11 +498,11 @@ async def natural_language_query(
 @app.post("/template", response_model=QueryResponse)
 async def template_query(
     request: TemplateQueryRequest,
-    api_key: Optional[str] = Depends(verify_api_key),
+    api_key: str | None = Depends(verify_api_key),
 ):
     """
     Execute a specific template query.
-    
+
     Example:
     ```
     POST /template
@@ -512,13 +514,9 @@ async def template_query(
     ```
     """
     start_time = time.time()
-    
+
     try:
-        results = agent.query(
-            request.template_name,
-            request.params,
-            request.limit
-        )
+        results = agent.query(request.template_name, request.params, request.limit)
 
         # Audit log query
         query_auditor.log_query(
@@ -532,14 +530,10 @@ async def template_query(
             api_key=api_key,
         )
 
-        return QueryResponse(
-            results=results,
-            count=len(results),
-            template=request.template_name
-        )
+        return QueryResponse(results=results, count=len(results), template=request.template_name)
 
-    except Exception as e:
-        logger.error(f"Template query failed")
+    except Exception:
+        logger.error("Template query failed")
         raise HTTPException(status_code=500, detail="Template query failed")
 
 
@@ -550,6 +544,7 @@ async def template_query(
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         app,
         host=settings.api_host,

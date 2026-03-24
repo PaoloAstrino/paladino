@@ -29,13 +29,13 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from loguru import logger
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
 from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
 
-from paladino.db import Neo4jConnection
 from paladino.analytics.fraud_patterns import FraudPatternLibrary
+from paladino.db import Neo4jConnection
 
 console = Console()
 
@@ -54,9 +54,7 @@ AVAILABLE_DETECTORS = [
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Paladino Fraud Pattern Detection Runner"
-    )
+    parser = argparse.ArgumentParser(description="Paladino Fraud Pattern Detection Runner")
     parser.add_argument(
         "--detectors",
         nargs="+",
@@ -80,9 +78,9 @@ def print_results_table(all_results: dict):
         box=box.ROUNDED,
         show_lines=True,
     )
-    table.add_column("Detector",        style="bold yellow", min_width=22)
-    table.add_column("Findings",        justify="right", style="bold red")
-    table.add_column("Top Finding",     style="cyan", max_width=60)
+    table.add_column("Detector", style="bold yellow", min_width=22)
+    table.add_column("Findings", justify="right", style="bold red")
+    table.add_column("Top Finding", style="cyan", max_width=60)
 
     for detector_name, findings in all_results.items():
         count = len(findings)
@@ -115,6 +113,7 @@ def export_report(results: dict, run_id: str):
     reports_dir.mkdir(exist_ok=True)
 
     from datetime import datetime
+
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_path = reports_dir / f"fraud_detection_{ts}.json"
 
@@ -126,11 +125,13 @@ def export_report(results: dict, run_id: str):
 def main():
     args = parse_args()
 
-    console.print(Panel(
-        "[bold magenta]🛡️  PALADINO — Fraud Pattern Detection[/bold magenta]\n"
-        "[dim]Scanning the knowledge graph for procurement red flags...[/dim]",
-        box=box.DOUBLE,
-    ))
+    console.print(
+        Panel(
+            "[bold magenta]🛡️  PALADINO — Fraud Pattern Detection[/bold magenta]\n"
+            "[dim]Scanning the knowledge graph for procurement red flags...[/dim]",
+            box=box.DOUBLE,
+        )
+    )
 
     conn = Neo4jConnection()
     try:
@@ -145,16 +146,16 @@ def main():
             console.print(f"[cyan]Running selected detectors: {', '.join(args.detectors)}[/cyan]\n")
             all_results = {}
             detector_map = {
-                "bid_rotation":       library.detect_bid_rotation,
-                "ghost_bidding":      library.detect_ghost_bidding,
-                "split_tendering":    library.detect_split_tendering,
+                "bid_rotation": library.detect_bid_rotation,
+                "ghost_bidding": library.detect_ghost_bidding,
+                "split_tendering": library.detect_split_tendering,
                 "short_award_window": library.detect_short_award_window,
                 "price_manipulation": library.detect_price_manipulation,
-                "ubo_conflict":       library.detect_ubo_conflict,
-                "winner_loser_ring":  library.detect_winner_loser_ring,
+                "ubo_conflict": library.detect_ubo_conflict,
+                "winner_loser_ring": library.detect_winner_loser_ring,
                 "pnrr_concentration": library.detect_pnrr_concentration,
                 "community_monopoly": library.detect_community_monopoly,
-                "network_clique":     library.detect_network_clique,
+                "network_clique": library.detect_network_clique,
             }
             for name in args.detectors:
                 try:

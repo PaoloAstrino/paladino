@@ -1,6 +1,7 @@
-import pytest
-from unittest.mock import MagicMock, ANY
+from unittest.mock import MagicMock
+
 from paladino.db import Neo4jConnection
+
 
 def test_execute_batch_checkpointing():
     """Verify that execute_batch skips already processed batches."""

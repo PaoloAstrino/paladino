@@ -3,39 +3,38 @@ Paladino CLI Entry Point
 Provides a unified interface for the Paladino ecosystem.
 """
 
-import sys
-import subprocess
 import io
-import json
-import os
-import shutil
-import requests
+import subprocess
+import sys
 from pathlib import Path
-from typing import Optional
+
+import requests
 
 # Fix Windows console encoding
-if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+
+from subprocess import CalledProcessError, TimeoutExpired
 
 import click
 import questionary
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
-from rich import box
-from subprocess import TimeoutExpired, CalledProcessError
 
 from paladino.constants import (
+    CLI_TIMEOUT,
+    DEFAULT_HOST,
+    DEFAULT_PORT,
+    ETL_SCRIPTS,
     PALADIN_ART,
     PALADINO_THEME,
-    CLI_TIMEOUT,
-    DEFAULT_PORT,
-    DEFAULT_HOST,
-    ETL_SCRIPTS,
 )
 
 
 class MenuChoice:
     """Enum-like class for menu choices to avoid magic strings."""
+
     INVESTIGATE = "Launch Investigator 🔍 (Detective Shell)"
     START_BACKEND = "Start Backend Engine ⚔️ (API Server)"
     STATS = "Strategic Stats 📊 (Graph Health)"
@@ -47,13 +46,14 @@ class MenuChoice:
 
 class MaintenanceChoice:
     """Enum-like class for maintenance menu choices."""
+
     ANAC_ETL = "Run ANAC ETL Pipeline"
     OPENCUP_ETL = "Run OpenCUP ETL Pipeline"
     ISTAT_ETL = "Run ISTAT ETL Pipeline"
     ENTITY_RESOLUTION = "Run Entity Resolution (LLM Judge)"
     GDS_ANALYTICS = "Run GDS Analytics (PageRank/Louvain)"
-    FRAUD_DETECTION  = "Run Fraud Pattern Detection 🔴"
-    SUPPLY_CHAIN_ETL  = "Run Supply Chain ETL 🔗"
+    FRAUD_DETECTION = "Run Fraud Pattern Detection 🔴"
+    SUPPLY_CHAIN_ETL = "Run Supply Chain ETL 🔗"
     TEMPORAL_ANALYSIS = "Run Temporal Analysis 📈"
     BACK = "Back to Strategic Hub 🔙"
 
@@ -67,11 +67,11 @@ SCRIPT_DIR = Path(__file__).parent.parent / "scripts"
 @click.pass_context
 def main(ctx: click.Context) -> None:
     """🛡️ Paladino: Italian Public Funds Knowledge Graph CLI.
-    
+
     Entry point for the Paladino ecosystem. If no subcommand is specified,
     launches the interactive Strategic Hub menu. Otherwise, executes the
     specified subcommand.
-    
+
     Args:
         ctx: Click context object
     """
@@ -79,8 +79,10 @@ def main(ctx: click.Context) -> None:
         # Fast Lane: Launch Investigator first
         console.print(Panel(PALADIN_ART, border_style="magenta", box=box.DOUBLE, expand=False))
 
-        console.print(f"[brand]DIRECT INVESTIGATION MODE ACTIVATED[/brand]")
-        console.print(f"[info]Opening the Detective Shell... (Type 'q' to return to Strategic Hub)[/info]\n")
+        console.print("[brand]DIRECT INVESTIGATION MODE ACTIVATED[/brand]")
+        console.print(
+            "[info]Opening the Detective Shell... (Type 'q' to return to Strategic Hub)[/info]\n"
+        )
 
         ctx.invoke(investigate)
 
@@ -90,7 +92,7 @@ def main(ctx: click.Context) -> None:
 
 def show_master_menu(ctx: click.Context, should_show_banner: bool = True) -> None:
     """Display the Grand Master interactive menu in a loop.
-    
+
     Args:
         ctx: Click context for invoking subcommands
         should_show_banner: If True, display the ASCII art banner before menu
@@ -99,8 +101,8 @@ def show_master_menu(ctx: click.Context, should_show_banner: bool = True) -> Non
         if should_show_banner:
             console.print(Panel(PALADIN_ART, border_style="magenta", box=box.DOUBLE, expand=False))
 
-        console.print(f"[brand]PALADINO STRATEGIC HUB[/brand]")
-        console.print(f"[info]Mode: Interactive Command & Control[/info]\n")
+        console.print("[brand]PALADINO STRATEGIC HUB[/brand]")
+        console.print("[info]Mode: Interactive Command & Control[/info]\n")
 
         choice = questionary.select(
             "What is your next move, Knight?",
@@ -113,11 +115,13 @@ def show_master_menu(ctx: click.Context, should_show_banner: bool = True) -> Non
                 MenuChoice.REFRESH,
                 MenuChoice.EXIT,
             ],
-            style=questionary.Style([
-                ('highlighted', 'fg:#00ffff bold'),
-                ('pointer', 'fg:#ff00ff bold'),
-                ('selected', 'fg:#ff00ff')
-            ])
+            style=questionary.Style(
+                [
+                    ("highlighted", "fg:#00ffff bold"),
+                    ("pointer", "fg:#ff00ff bold"),
+                    ("selected", "fg:#ff00ff"),
+                ]
+            ),
         ).ask()
 
         if choice is None:  # Handle Ctrl+C in menu
@@ -141,7 +145,9 @@ def show_master_menu(ctx: click.Context, should_show_banner: bool = True) -> Non
             console.clear()
             should_show_banner = True
         elif choice == MenuChoice.EXIT:
-            console.print("[brand]Paladino standing down. System state preserved. Farewell, Knight.[/brand]")
+            console.print(
+                "[brand]Paladino standing down. System state preserved. Farewell, Knight.[/brand]"
+            )
             sys.exit(0)
 
 
@@ -160,7 +166,7 @@ def show_maintenance_menu() -> None:
                 MaintenanceChoice.SUPPLY_CHAIN_ETL,
                 MaintenanceChoice.TEMPORAL_ANALYSIS,
                 MaintenanceChoice.BACK,
-            ]
+            ],
         ).ask()
 
         if choice == MaintenanceChoice.BACK or choice is None:
@@ -174,7 +180,7 @@ def show_maintenance_menu() -> None:
 
 def _run_script(script_path: Path, task_name: str) -> None:
     """Run an ETL or analytics script with proper error handling.
-    
+
     Args:
         script_path: Path to the script to execute
         task_name: Human-readable task name for status messages
@@ -182,7 +188,7 @@ def _run_script(script_path: Path, task_name: str) -> None:
     if not script_path.exists():
         console.print(f"[error]Script not found: {script_path}[/error]")
         return
-    
+
     console.print(f"[info]Executing {script_path.name}...[/info]")
     try:
         subprocess.run(
@@ -199,19 +205,24 @@ def _run_script(script_path: Path, task_name: str) -> None:
     except FileNotFoundError:
         console.print(f"[error]Python interpreter not found: {sys.executable}[/error]")
     except KeyboardInterrupt:
-        console.print(f"[warning]Task interrupted by user.[/warning]")
+        console.print("[warning]Task interrupted by user.[/warning]")
 
     # Pause before returning to menu
     input("\nPress Enter to return to Maintenance...")
 
 
 @main.command()
-@click.option("--port", default=DEFAULT_PORT, type=click.IntRange(1, 65535), help="Port to run the API server on.")
+@click.option(
+    "--port",
+    default=DEFAULT_PORT,
+    type=click.IntRange(1, 65535),
+    help="Port to run the API server on.",
+)
 @click.option("--host", default=DEFAULT_HOST, type=str, help="Host to run the API server on.")
 @click.option("--show-banner", is_flag=True, default=True, help="Show welcome banner on startup.")
 def work(port: int, host: str, show_banner: bool = True) -> None:
     """⚔️ Start the Paladino ecosystem (API and system services).
-    
+
     Args:
         port: Port to run the API server on (1-65535)
         host: Host to run the API server on
@@ -219,16 +230,20 @@ def work(port: int, host: str, show_banner: bool = True) -> None:
     """
     if show_banner:
         from paladino.app.investigator import draw_paladin
+
         draw_paladin(console)
         console.print(Panel(PALADIN_ART, border_style="magenta", box=box.DOUBLE))
 
-    console.print(f"[brand]Activating Paladino Engine...[/brand]")
-    console.print(f"[info]Mode: Local-First / Single-User[/info]")
+    console.print("[brand]Activating Paladino Engine...[/brand]")
+    console.print("[info]Mode: Local-First / Single-User[/info]")
     console.print(f"[warning]API Endpoint: http://{host}:{port}[/warning]")
     console.print(f"[warning]Interactive Docs: http://{host}:{port}/docs[/warning]")
-    console.print(f"[success]Systems live. Press Ctrl+C to stop engine and return to hub.[/success]\n")
+    console.print(
+        "[success]Systems live. Press Ctrl+C to stop engine and return to hub.[/success]\n"
+    )
 
     import uvicorn
+
     try:
         uvicorn.run("paladino.app.api:app", host=host, port=port, reload=False, log_level="error")
     except KeyboardInterrupt:
@@ -238,12 +253,12 @@ def work(port: int, host: str, show_banner: bool = True) -> None:
 @main.command()
 def investigate() -> None:
     """🔍 Launch the Paladino Investigator REPL.
-    
+
     Opens an interactive REPL for querying the knowledge graph using
     natural language or direct Cypher queries.
     """
     from paladino.app.investigator import InvestigativeREPL
-    
+
     repl = None
     try:
         repl = InvestigativeREPL(console=console)
@@ -251,7 +266,7 @@ def investigate() -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        if repl and hasattr(repl, 'driver'):
+        if repl and hasattr(repl, "driver"):
             repl.driver.close()
 
 
@@ -262,10 +277,11 @@ def stats() -> None:
     Shows node counts, relationship counts, and other graph health metrics
     without initializing the full REPL.
     """
-    from paladino.db import get_driver
     from rich.table import Table
 
-    console.print(f"[brand]Graph Statistics[/brand]\n")
+    from paladino.db import get_driver
+
+    console.print("[brand]Graph Statistics[/brand]\n")
 
     try:
         driver = get_driver()
@@ -287,7 +303,9 @@ def stats() -> None:
             console.print(table)
 
             # Relationship counts by type
-            table = Table(title="Relationship Counts", show_header=True, header_style="bold magenta")
+            table = Table(
+                title="Relationship Counts", show_header=True, header_style="bold magenta"
+            )
             table.add_column("Type", style="cyan")
             table.add_column("Count", style="green")
 
@@ -309,15 +327,15 @@ def stats() -> None:
 
 def setup_llm_config() -> None:
     """Interactive LLM configuration wizard.
-    
+
     Allows users to choose between:
     1. Ollama (local models) - selects from available models via `ollama list`
     2. External API (OpenAI/Groq/etc.) - configure API key and endpoint
     """
     from paladino.config import settings
-    
+
     console.print(Panel("[brand]🤖 LLM Configuration Wizard[/brand]\n", border_style="cyan"))
-    
+
     # Step 1: Choose provider
     provider = questionary.select(
         "Select LLM provider:",
@@ -328,23 +346,25 @@ def setup_llm_config() -> None:
             "Anthropic API",
             "Custom OpenAI-compatible API",
         ],
-        style=questionary.Style([
-            ('highlighted', 'fg:#00ffff bold'),
-            ('pointer', 'fg:#ff00ff bold'),
-        ])
+        style=questionary.Style(
+            [
+                ("highlighted", "fg:#00ffff bold"),
+                ("pointer", "fg:#ff00ff bold"),
+            ]
+        ),
     ).ask()
-    
+
     if provider is None:
         console.print("[warning]Configuration cancelled.[/warning]")
         return
-    
+
     env_path = Path(".env")
     env_content = ""
-    
+
     # Read existing .env if it exists
     if env_path.exists():
         env_content = env_path.read_text(encoding="utf-8")
-    
+
     if provider == "Ollama (Local, Free)":
         # Fetch available models
         console.print("[info]Fetching available Ollama models...[/info]")
@@ -353,30 +373,34 @@ def setup_llm_config() -> None:
             response.raise_for_status()
             models_data = response.json()
             models = [m.get("name", "") for m in models_data.get("models", [])]
-            
+
             if not models:
-                console.print("[error]No Ollama models found. Run 'ollama pull llama3.2' first.[/error]")
+                console.print(
+                    "[error]No Ollama models found. Run 'ollama pull llama3.2' first.[/error]"
+                )
                 return
-            
+
             console.print(f"[success]Found {len(models)} model(s)[/success]")
-            
+
             # Let user select model
             selected_model = questionary.select(
                 "Select model to use:",
                 choices=models,
-                style=questionary.Style([
-                    ('highlighted', 'fg:#00ffff bold'),
-                    ('pointer', 'fg:#ff00ff bold'),
-                ])
+                style=questionary.Style(
+                    [
+                        ("highlighted", "fg:#00ffff bold"),
+                        ("pointer", "fg:#ff00ff bold"),
+                    ]
+                ),
             ).ask()
-            
+
             if selected_model is None:
                 return
-            
+
             # Update .env
             env_lines = env_content.splitlines()
             new_env_lines = []
-            
+
             for line in env_lines:
                 if line.startswith("LLM_MODEL="):
                     new_env_lines.append(f'LLM_MODEL="{selected_model}"')
@@ -388,22 +412,24 @@ def setup_llm_config() -> None:
                     new_env_lines.append(f'OLLAMA_BASE_URL="{settings.ollama_base_url}"')
                 else:
                     new_env_lines.append(line)
-            
+
             # Add missing lines
             if not any(line.startswith("LLM_MODEL=") for line in new_env_lines):
                 new_env_lines.append(f'LLM_MODEL="{selected_model}"')
             if not any(line.startswith("OLLAMA_BASE_URL=") for line in new_env_lines):
                 new_env_lines.append(f'OLLAMA_BASE_URL="{settings.ollama_base_url}"')
-            
+
             env_path.write_text("\n".join(new_env_lines), encoding="utf-8")
             console.print(f"[success]✅ Ollama configured: {selected_model}[/success]")
-            
+
         except requests.ConnectionError:
-            console.print("[error]❌ Cannot connect to Ollama. Is it running? (ollama serve)[/error]")
+            console.print(
+                "[error]❌ Cannot connect to Ollama. Is it running? (ollama serve)[/error]"
+            )
             console.print("[info]Install: https://ollama.ai[/info]")
         except Exception as e:
             console.print(f"[error]Error: {e}[/error]")
-    
+
     else:
         # External API configuration
         api_config = {
@@ -432,60 +458,80 @@ def setup_llm_config() -> None:
                 "env_key": "",
             },
         }
-        
+
         config = api_config[provider]
-        
+
         # Get custom base URL if needed
         if provider == "Custom OpenAI-compatible API":
             base_url = questionary.text(
                 "Enter API base URL:",
                 default="https://api.example.com/v1",
-                style=questionary.Style([
-                    ('highlighted', 'fg:#00ffff bold'),
-                ])
+                style=questionary.Style(
+                    [
+                        ("highlighted", "fg:#00ffff bold"),
+                    ]
+                ),
             ).ask()
             if base_url is None:
                 return
             config["base_url"] = base_url
-            
+
             model = questionary.text(
                 "Enter model name:",
-                style=questionary.Style([
-                    ('highlighted', 'fg:#00ffff bold'),
-                ])
+                style=questionary.Style(
+                    [
+                        ("highlighted", "fg:#00ffff bold"),
+                    ]
+                ),
             ).ask()
             if model is None:
                 return
         else:
             model = questionary.text(
                 config["model_prompt"],
-                style=questionary.Style([
-                    ('highlighted', 'fg:#00ffff bold'),
-                ])
+                style=questionary.Style(
+                    [
+                        ("highlighted", "fg:#00ffff bold"),
+                    ]
+                ),
             ).ask()
             if model is None:
                 return
-        
+
         # Get API key
         api_key = questionary.password(
             f"Enter {config['key_name']}:",
-            style=questionary.Style([
-                ('highlighted', 'fg:#00ffff bold'),
-            ])
+            style=questionary.Style(
+                [
+                    ("highlighted", "fg:#00ffff bold"),
+                ]
+            ),
         ).ask()
         if api_key is None:
             return
-        
+
         # Update .env
-        env_lines = [line for line in env_content.splitlines() if not any(
-            skip in line for skip in ["LLM_MODEL=", "LLM_API_KEY=", "LLM_API_BASE=", "OPENAI_API_KEY=", "GROQ_API_KEY=", "ANTHROPIC_API_KEY="]
-        )]
-        
+        env_lines = [
+            line
+            for line in env_content.splitlines()
+            if not any(
+                skip in line
+                for skip in [
+                    "LLM_MODEL=",
+                    "LLM_API_KEY=",
+                    "LLM_API_BASE=",
+                    "OPENAI_API_KEY=",
+                    "GROQ_API_KEY=",
+                    "ANTHROPIC_API_KEY=",
+                ]
+            )
+        ]
+
         env_lines.append(f'LLM_MODEL="{model}"')
         env_lines.append(f'LLM_API_BASE="{config["base_url"]}"')
         env_lines.append(f'LLM_API_KEY="{api_key}"')
         env_lines.append(f'{config["env_key"]}="{api_key}"')
-        
+
         env_path.write_text("\n".join(env_lines), encoding="utf-8")
         console.print(f"[success]✅ {provider} configured: {model}[/success]")
         console.print("[info]Restart the application for changes to take effect.[/info]")
@@ -494,7 +540,7 @@ def setup_llm_config() -> None:
 @main.command("configure-llm")
 def configure_llm() -> None:
     """🤖 Launch interactive LLM configuration wizard.
-    
+
     Choose between Ollama (local models) or external APIs (OpenAI, Groq, etc.)
     """
     setup_llm_config()
@@ -504,23 +550,24 @@ def configure_llm() -> None:
 def load_samples() -> None:
     """🧪 Load a small sample dataset (ANAC + OpenCUP) for testing."""
     import pandas as pd
+
     from paladino.etl.anac_loader import AnacLoader
     from paladino.etl.opencup_loader import OpenCupLoader
-    
+
     anac_path = Path("data/samples/anac_sample.csv")
     opencup_path = Path("data/samples/opencup_sample.csv")
-    
+
     if not anac_path.exists() or not opencup_path.exists():
         console.print("[error]Sample files not found in data/samples/[/error]")
         return
-        
-    console.print(f"[brand]Loading sample intelligence...[/brand]")
-    
+
+    console.print("[brand]Loading sample intelligence...[/brand]")
+
     # Load ANAC
     try:
         loader = AnacLoader()
         df_anac = pd.read_csv(anac_path)
-        loader.load_batch(df_anac.to_dict('records'))
+        loader.load_batch(df_anac.to_dict("records"))
         console.print(f"[success]✓ Loaded {len(df_anac)} sample Tenders[/success]")
     except Exception as e:
         console.print(f"[error]ANAC load failed: {e}[/error]")
@@ -529,12 +576,16 @@ def load_samples() -> None:
     try:
         loader = OpenCupLoader()
         df_cup = pd.read_csv(opencup_path)
-        loader.load_batch(df_cup.to_dict('records'))
+        loader.load_batch(df_cup.to_dict("records"))
         console.print(f"[success]✓ Loaded {len(df_cup)} sample Projects[/success]")
     except Exception as e:
         console.print(f"[error]OpenCUP load failed: {e}[/error]")
 
-    console.print("\n[success]Sample load complete. Launch 'paladino investigate' to explore.[/success]")
+    console.print(
+        "\n[success]Sample load complete. Launch 'paladino investigate' to explore.[/success]"
+    )
+
+
 @click.option(
     "--for",
     "target",
@@ -545,7 +596,7 @@ def load_samples() -> None:
 def preflight(target: str) -> None:
     """🧪 Validate environment prerequisites and system health."""
     from paladino.preflight import PreflightChecker
-    
+
     checker = PreflightChecker(console=console)
     checker.run_all()
 
@@ -601,7 +652,9 @@ def ingest_unstructured(
         return
 
     document = ingestor.ingest(source)
-    console.print(f"[success]Extracted content from {document.source_type}: {document.source}[/success]")
+    console.print(
+        f"[success]Extracted content from {document.source_type}: {document.source}[/success]"
+    )
 
     from paladino.etl.ner_pipeline import UnstructuredNERPipeline
 

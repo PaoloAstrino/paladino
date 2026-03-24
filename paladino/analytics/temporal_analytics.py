@@ -29,19 +29,18 @@ Usage
 from __future__ import annotations
 
 import statistics
-from typing import Dict, List, Optional
 
 from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
 
-from paladino.db import Neo4jConnection
 from paladino.constants import (
     TEMPORAL_DEFAULT_QUARTERS,
-    TEMPORAL_SPIKE_THRESHOLD,
     TEMPORAL_MIN_TENDERS_PER_BUCKET,
     TEMPORAL_SEASONAL_YEARS,
+    TEMPORAL_SPIKE_THRESHOLD,
 )
+from paladino.db import Neo4jConnection
 
 _console = Console()
 
@@ -90,9 +89,9 @@ class TemporalAnalyzer:
 
     def get_tender_volume_trend(
         self,
-        company_id: Optional[str] = None,
+        company_id: str | None = None,
         quarters: int = TEMPORAL_DEFAULT_QUARTERS,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Return quarterly tender activity: count, total value, average value.
 
@@ -130,7 +129,7 @@ class TemporalAnalyzer:
                 query,
                 {
                     "company_id": company_id,
-                    "months":     quarters * 3,
+                    "months": quarters * 3,
                     "min_bucket": TEMPORAL_MIN_TENDERS_PER_BUCKET,
                 },
             )
@@ -153,7 +152,7 @@ class TemporalAnalyzer:
             results = self.conn.run_query(
                 query,
                 {
-                    "months":     quarters * 3,
+                    "months": quarters * 3,
                     "min_bucket": TEMPORAL_MIN_TENDERS_PER_BUCKET,
                 },
             )
@@ -168,9 +167,9 @@ class TemporalAnalyzer:
 
     def get_single_bidder_trend(
         self,
-        company_id: Optional[str] = None,
+        company_id: str | None = None,
         quarters: int = TEMPORAL_DEFAULT_QUARTERS,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Return quarterly single-bidder ratio (fraction of unopposed wins).
 
@@ -183,7 +182,7 @@ class TemporalAnalyzer:
         logger.debug(f"[temporal] single_bidder_trend: company={company_id} q={quarters}")
 
         company_filter = "AND c.id = $company_id" if company_id else ""
-        params: Dict = {"months": quarters * 3}
+        params: dict = {"months": quarters * 3}
         if company_id:
             params["company_id"] = company_id
 
@@ -225,7 +224,7 @@ class TemporalAnalyzer:
         self,
         company_id: str,
         quarters: int = TEMPORAL_DEFAULT_QUARTERS,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Quarterly Herfindahl-Hirschman Index (HHI) of buyer concentration for
         a given company winner.
@@ -301,7 +300,7 @@ class TemporalAnalyzer:
         self,
         ateco_prefix: str,
         quarters: int = TEMPORAL_DEFAULT_QUARTERS,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Quarterly total spending + standard deviation for all companies whose
         ATECO code starts with ``ateco_prefix``.
@@ -355,7 +354,7 @@ class TemporalAnalyzer:
         threshold: float = TEMPORAL_SPIKE_THRESHOLD,
         quarters: int = TEMPORAL_DEFAULT_QUARTERS,
         limit: int = 30,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Identify companies whose most recent quarter's activity exceeds
         ``threshold`` × the rolling mean of all prior quarters in the window.
@@ -382,10 +381,10 @@ class TemporalAnalyzer:
 
         # Pull per-company quarterly volume
         raw = self.conn.run_query(
-            f"""
+            """
             MATCH (c:Company)-[:WINS]->(t:Tender)
             WHERE t.data_aggiudicazione IS NOT NULL
-              AND t.data_aggiudicazione >= date() - duration({{months: $months}})
+              AND t.data_aggiudicazione >= date() - duration({months: $months})
             WITH c.id                                   AS company_id,
                  c.nome_normalizzato                    AS company_name,
                  t.data_aggiudicazione.year             AS year,
@@ -406,18 +405,19 @@ class TemporalAnalyzer:
 
         # Group in Python
         from collections import defaultdict
-        by_company: Dict[str, List[Dict]] = defaultdict(list)
+
+        by_company: dict[str, list[dict]] = defaultdict(list)
         for row in raw:
             by_company[row["company_id"]].append(row)
 
-        spikes: List[Dict] = []
+        spikes: list[dict] = []
         for company_id, rows in by_company.items():
             if len(rows) < 2:
                 continue  # need at least one prior quarter to compare
 
             values = [r[metric] or 0.0 for r in rows]
             latest = values[-1]
-            prior  = values[:-1]
+            prior = values[:-1]
             prior_mean = statistics.mean(prior)
 
             if prior_mean == 0:
@@ -426,16 +426,18 @@ class TemporalAnalyzer:
             ratio = latest / prior_mean
             if ratio >= threshold:
                 last_row = rows[-1]
-                spikes.append({
-                    "company_id":       company_id,
-                    "company_name":     last_row["company_name"],
-                    "latest_year":      last_row["year"],
-                    "latest_quarter":   last_row["quarter"],
-                    "latest_value":     round(latest, 2),
-                    "prior_mean":       round(prior_mean, 2),
-                    "spike_ratio":      round(ratio, 3),
-                    "metric":           metric,
-                })
+                spikes.append(
+                    {
+                        "company_id": company_id,
+                        "company_name": last_row["company_name"],
+                        "latest_year": last_row["year"],
+                        "latest_quarter": last_row["quarter"],
+                        "latest_value": round(latest, 2),
+                        "prior_mean": round(prior_mean, 2),
+                        "spike_ratio": round(ratio, 3),
+                        "metric": metric,
+                    }
+                )
 
         spikes.sort(key=lambda x: x["spike_ratio"], reverse=True)
         return spikes[:limit]
@@ -447,7 +449,7 @@ class TemporalAnalyzer:
     def get_seasonal_patterns(
         self,
         years: int = TEMPORAL_SEASONAL_YEARS,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Aggregate tender count and total value by calendar month across all
         years in the window to reveal seasonal procurement bias.
@@ -462,8 +464,19 @@ class TemporalAnalyzer:
         logger.debug(f"[temporal] seasonal_patterns: years={years}")
 
         _MONTH_NAMES = [
-            "", "Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
-            "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre",
+            "",
+            "Gennaio",
+            "Febbraio",
+            "Marzo",
+            "Aprile",
+            "Maggio",
+            "Giugno",
+            "Luglio",
+            "Agosto",
+            "Settembre",
+            "Ottobre",
+            "Novembre",
+            "Dicembre",
         ]
 
         results = self.conn.run_query(
@@ -486,11 +499,11 @@ class TemporalAnalyzer:
 
         return [
             {
-                "month":         row["month"],
-                "month_name":    _MONTH_NAMES[row["month"]],
-                "tender_count":  row["tender_count"],
-                "total_value":   row["total_value"],
-                "avg_per_year":  round(row["tender_count"] / years, 1),
+                "month": row["month"],
+                "month_name": _MONTH_NAMES[row["month"]],
+                "tender_count": row["tender_count"],
+                "total_value": row["total_value"],
+                "avg_per_year": round(row["tender_count"] / years, 1),
             }
             for row in results
         ]
@@ -503,7 +516,7 @@ class TemporalAnalyzer:
         self,
         company_id: str,
         snapshots: int = 8,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Return the most recent risk-score snapshots for a company, ordered
         newest-first.
@@ -531,6 +544,8 @@ class TemporalAnalyzer:
         )
 
         if not results:
-            logger.debug(f"[temporal] No risk snapshots for company={company_id}. "
-                         "Run RiskEngine.save_risk_snapshot() after each analysis cycle.")
+            logger.debug(
+                f"[temporal] No risk snapshots for company={company_id}. "
+                "Run RiskEngine.save_risk_snapshot() after each analysis cycle."
+            )
         return results
