@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use this software in your research, please cite it as below."
+title: "Paladino"
+abstract: "Multi-source knowledge graph integrating Italy's public spending data (ANAC, OpenCUP, ISTAT, Demanio, ARERA, MIT). Paladino builds a federated knowledge graph to enable sophisticated cross-source analysis of Italian public spending, including procurement, funded projects, corporate structures, socio-economic context, and public assets. Features GraphRAG-powered agent for multi-hop reasoning queries."
+authors:
+  - family-names: "Data Engineering Team"
+    given-names: "Paladino"
+    orcid: "https://orcid.org/0000-0000-0000-0000"
+    affiliation: "Paladino Project"
+    country: "IT"
+version: 0.1.0
+doi: "10.0000/paladino.0.1.0"
+date-released: 2026-02-18
+url: "https://github.com/paladino-project/paladino"
+repository-code: "https://github.com/paladino-project/paladino"
+license: MIT
+keywords:
+  - "knowledge-graph"
+  - "neo4j"
+  - "public-spending"
+  - "italy"
+  - "graphrag"
+  - "ANAC"
+  - "OpenCUP"
+  - "ISTAT"

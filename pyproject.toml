@@ -1,0 +1,105 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paladino"
+version = "0.1.0"
+description = "Italian Public Funds Knowledge Graph - Multi-source integration of ANAC, OpenCUP, ISTAT, and more"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "Data Engineering Team"}
+]
+keywords = ["knowledge-graph", "neo4j", "public-spending", "italy", "graphrag"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    # Core
+    "python-dotenv>=1.0.0",
+
+    "neo4j>=5.16.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "polars>=0.20.0",
+    "requests>=2.31.0",
+    "tqdm>=4.66.0",
+    "loguru>=0.7.2",
+    "fastapi>=0.109.0",
+    "python-multipart>=0.0.9",
+    "uvicorn[standard]>=0.27.0",
+    "sentence-transformers>=2.3.0",
+    "python-Levenshtein>=0.25.0",
+    "rapidfuzz>=3.6.0",
+    "pyarrow>=15.0.0",
+    "httpx>=0.26.0",
+    "scikit-learn>=1.4.0",
+    # LLM & Agent
+    "langchain>=0.1.0",
+    "langchain-openai>=0.0.5",
+    "openai>=1.10.0",
+
+    # Utilities
+    "click>=8.1.7",
+    "questionary>=2.0.0",
+    "pymupdf>=1.24.0",
+    "trafilatura>=1.9.0",
+    "pillow>=10.0.0",
+    "pytesseract>=0.3.10",
+    "faster-whisper>=1.0.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.23.0",
+    "black>=24.1.0",
+    "ruff>=0.1.0",
+    "mypy>=1.8.0",
+    "ipython>=8.20.0",
+    "ipdb>=0.13.13",
+]
+
+[project.scripts]
+paladino = "paladino.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["paladino*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --cov=paladino --cov-report=term-missing"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: marks tests as integration tests (Neo4j required)",
+    "e2e: marks tests as end-to-end tests",
+]

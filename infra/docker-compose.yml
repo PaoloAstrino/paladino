@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  neo4j:
+    image: neo4j:5.16-community
+    container_name: paladino-neo4j
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    environment:
+      # SECURITY FIX (SEC-001): Use environment variable instead of hardcoded credentials
+      # IMPORTANT: Set NEO4J_AUTH in your .env file: NEO4J_AUTH=neo4j/YOUR_SECURE_PASSWORD
+      - NEO4J_AUTH=${NEO4J_AUTH:-neo4j/CHANGE_ME_IN_PRODUCTION}
+      # Local Performance Tuning (16GB RAM workstation)
+      - NEO4J_server_memory_heap_initial__size=${NEO4J_HEAP_INITIAL:-4G}
+      - NEO4J_server_memory_heap_max__size=${NEO4J_HEAP_MAX:-4G}
+      - NEO4J_server_memory_pagecache_size=${NEO4J_PAGECACHE:-6G}
+      - NEO4J_server_tx__state_memory__allocation=OFF_HEAP
+      # APOC Plugin
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      # Performance
+      - NEO4J_dbms_checkpoint_interval_time=30m
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - ./schema:/schema:ro
+      - neo4j_backups:/backups
+    healthcheck:
+      # SECURITY FIX: Use environment variable for password in healthcheck
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "${NEO4J_PASSWORD:-CHANGE_ME_IN_PRODUCTION}", "RETURN 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 4G
+
+  # SECURITY FIX (INF-005): Automated Neo4j backups
+  neo4j-backup:
+    image: neo4j:5.16-community
+    container_name: paladino-backup
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    environment:
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-CHANGE_ME_IN_PRODUCTION}
+    volumes:
+      - neo4j_data:/data:ro
+      - neo4j_backups:/backups
+    command: >
+      bash -c "
+        while true; do
+          neo4j-admin database dump neo4j --to-path=/backups --overwrite-destination=true
+          sleep 86400
+        done
+      "
+    profiles:
+      - production
+
+  # Optional: Redis for query caching (Phase 8)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: paladino-redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  neo4j_backups:
+  # redis_data:

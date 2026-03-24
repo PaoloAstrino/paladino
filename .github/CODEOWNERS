@@ -1,0 +1,44 @@
+# CODEOWNERS for Paladino
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for the entire repository
+* @paladino-project/maintainers
+
+# Core code ownership
+paladino/ @paladino-project/maintainers
+
+# Schema and database
+schema/ @paladino-project/maintainers
+data/ @paladino-project/maintainers
+
+# ETL pipelines
+etl/ @paladino-project/maintainers
+scripts/run_*.py @paladino-project/maintainers
+
+# API and backend
+app/ @paladino-project/maintainers
+
+# Analytics and risk engine
+analytics/ @paladino-project/maintainers
+
+# CLI
+paladino/cli.py @paladino-project/maintainers
+
+# Documentation
+docs/ @paladino-project/maintainers
+README.md @paladino-project/maintainers
+CONTRIBUTING.md @paladino-project/maintainers
+CODE_OF_CONDUCT.md @paladino-project/maintainers
+SECURITY.md @paladino-project/maintainers
+CHANGELOG.md @paladino-project/maintainers
+
+# GitHub workflows and templates
+.github/ @paladino-project/maintainers
+
+# Configuration files
+pyproject.toml @paladino-project/maintainers
+docker-compose.yml @paladino-project/maintainers
+
+# Security-related changes require additional review
+SECURITY.md @paladino-project/security-team
+**/*.py @paladino-project/security-team
