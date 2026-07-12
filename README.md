@@ -1,5 +1,7 @@
 # 🛡️ Paladino — Sovereign Public Funds Intelligence Workspace
 
+[🇬🇧 English](README.md) • [🇮🇹 Italiano](README_IT.md)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Local Only](https://img.shields.io/badge/Workstation-100%25_Local-brightgreen)](https://github.com/psf/black)
