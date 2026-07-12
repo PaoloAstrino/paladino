@@ -248,6 +248,52 @@ class InvestigativeREPL:
         )
         self.console.print(welcome)
 
+    def show_diff_report(self, diff_res: dict):
+        """Visually render the structural diff results."""
+        self.console.print(f"\n[bold magenta]🕰️ TEMPORAL DIFF REPORT: {diff_res['entity_id']}[/bold magenta]")
+        self.console.print(f"[dim]Period: {diff_res['date_a']} ➔ {diff_res['date_b']}[/dim]\n")
+
+        if not diff_res["has_changes"]:
+            self.console.print("[info]No changes detected in properties or connections.[/info]")
+            return
+
+        delta = diff_res["diff"]
+
+        # 1. Property Changes
+        if delta["added"] or delta["removed"] or delta["changed"]:
+            table = Table(title="💎 Property Changes", box=box.ROUNDED)
+            table.add_column("Property", style="cyan")
+            table.add_column("Status", style="bold")
+            table.add_column("Value(s)", style="white")
+
+            for k, v in delta["added"].items():
+                table.add_row(k, "[green]ADDED[/green]", str(v))
+            for k, v in delta["removed"].items():
+                table.add_row(k, "[red]REMOVED[/red]", str(v))
+            for k, v in delta["changed"].items():
+                table.add_row(k, "[yellow]CHANGED[/yellow]", f"{v['old']} ➔ {v['new']}")
+            
+            self.console.print(table)
+
+        # 2. Structural Changes (Links)
+        if delta["added_links"] or delta["removed_links"] or delta["changed_links"]:
+            table = Table(title="🔗 Structural Shifts (1-Hop)", box=box.ROUNDED)
+            table.add_column("Relation", style="magenta")
+            table.add_column("Status", style="bold")
+            table.add_column("Target Entity", style="cyan")
+            table.add_column("Notes", style="dim")
+
+            for l in delta["added_links"]:
+                table.add_row(l["type"], "[green]NEW LINK[/green]", l["target_id"], str(l["props"]))
+            for l in delta["removed_links"]:
+                table.add_row(l["type"], "[red]SEVERED[/red]", l["target_id"], "Link removed")
+            for l in delta["changed_links"]:
+                table.add_row(l["type"], "[yellow]META CHANGE[/yellow]", l["target_id"], str(l["changes"]))
+            
+            self.console.print(table)
+
+        self.console.print("\n[bold green]Analysis Complete.[/bold green]\n")
+
     def show_stats(self):
         """Display graph statistics using Rich tables."""
         self.console.print("\n[highlight]📊 Graph Infrastructure Statistics[/highlight]")
@@ -298,6 +344,31 @@ class InvestigativeREPL:
                 )
             )
 
+        # 3. Temporal Alerts (New Section)
+        with self.driver.session() as session:
+            alerts_res = list(session.run(
+                "MATCH (a:TemporalAlert) RETURN a.alert_type as type, count(a) as count"
+            ))
+            recent_alerts = list(session.run(
+                "MATCH (e)-[:HAS_TEMPORAL_ALERT]->(a:TemporalAlert) "
+                "RETURN e.nome_normalizzato as entity, a.alert_type as type, a.severity as sev, a.delta as delta "
+                "ORDER BY a.valid_from DESC LIMIT 5"
+            ))
+
+        if alerts_res:
+            alert_table = Table(title="🔮 Temporal Intelligence (Recent Drift)", box=box.SIMPLE)
+            alert_table.add_column("Entity", style="cyan")
+            alert_table.add_column("Type", style="magenta")
+            alert_table.add_column("Severity", style="bold")
+            alert_table.add_column("Delta", justify="right")
+
+            for r in recent_alerts:
+                sev_color = "red" if r["sev"] == "critical" else "yellow"
+                delta_str = f"{r['delta']:+.2f}" if r["delta"] else "-"
+                alert_table.add_row(r["entity"], r["type"], f"[{sev_color}]{r['sev']}[/{sev_color}]", delta_str)
+            
+            self.console.print(alert_table)
+
     def show_templates(self):
         """Display templates in a clean menu."""
         table = Table(
@@ -347,9 +418,12 @@ class InvestigativeREPL:
             self.console.print(table)
         return capture.get()
 
-    def process_query(self, question: str):
+    def process_query(self, question: str, as_of: str | None = None):
         """Process natural language query with visual feedback."""
-        self.console.rule(f"[highlight]Investigation: {question}[/highlight]")
+        title = f"Investigation: {question}"
+        if as_of:
+            title += f" [dim](As of {as_of})[/dim]"
+        self.console.rule(f"[highlight]{title}[/highlight]")
 
         with Status(
             "Analyzing question & generating Cypher...",
@@ -357,7 +431,7 @@ class InvestigativeREPL:
             console=self.console,
         ):
             try:
-                result = self.agent.natural_language_query(question)
+                result = self.agent.natural_language_query(question, as_of=as_of)
             except LLMConnectionError as e:
                 self.console.print(f"\n[warning]⚠️  {e.message}[/warning]")
                 if e.hint:
@@ -575,6 +649,29 @@ class InvestigativeREPL:
                     # Generate full report
                     filename = user_input.split()[1] if len(user_input.split()) > 1 else None
                     self.generate_report(filename)
+                elif cmd.startswith(".diff "):
+                    # .diff <id> --from <date_a> --to <date_b>
+                    parts = user_input.split()
+                    if len(parts) < 6:
+                        self.console.print("[warning]Usage: .diff <id> --from <date_a> --to <date_b>[/warning]")
+                    else:
+                        entity_id = parts[1]
+                        date_a = parts[parts.index("--from") + 1]
+                        date_b = parts[parts.index("--to") + 1]
+                        
+                        from paladino.analytics.temporal_analytics import TemporalAnalyzer
+                        from paladino.db import Neo4jConnection
+                        
+                        try:
+                            with Status(f"Analyzing structural shifts for {entity_id}...", spinner="aesthetic", console=self.console):
+                                conn = Neo4jConnection()
+                                analyzer = TemporalAnalyzer(conn)
+                                diff_res = analyzer.get_diff(entity_id, date_a, date_b)
+                                conn.close()
+                                
+                            self.show_diff_report(diff_res)
+                        except Exception as e:
+                            self.console.print(f"[error]Diff analysis failed: {e}[/error]")
                 elif cmd.startswith("search "):
                     keyword = user_input[7:].strip()
                     if keyword:
@@ -606,7 +703,14 @@ class InvestigativeREPL:
                                 }
                             )
                 elif user_input.startswith("@"):
-                    template_name = user_input[1:].strip()
+                    # Parse as-of if present: @template --as-of 2024-01-01
+                    as_of = None
+                    parts = user_input.split(" --as-of ")
+                    clean_input = parts[0]
+                    if len(parts) > 1:
+                        as_of = parts[1].strip()
+                    
+                    template_name = clean_input[1:].strip()
                     if template_name in self.agent.templates.list_templates():
                         with Status(
                             f"Executing {template_name}...",
@@ -614,17 +718,19 @@ class InvestigativeREPL:
                             console=self.console,
                         ):
                             try:
-                                res = self.agent.query(template_name, {}, limit=15)
-                                formatted_table_str = self.format_results(
-                                    res, title=f"Template: {template_name}"
-                                )
+                                params = {"as_of": as_of} if as_of else {}
+                                res = self.agent.query(template_name, params, limit=15)
+                                title = f"Template: {template_name}"
+                                if as_of: title += f" [dim](As of {as_of})[/dim]"
+                                
+                                formatted_table_str = self.format_results(res, title=title)
                                 if formatted_table_str:
                                     self.console.print(formatted_table_str)
 
                                 # Store query for export
                                 self.session_queries.append(
                                     {
-                                        "query": f"template: {template_name}",
+                                        "query": f"template: {template_name} (as_of: {as_of})",
                                         "results": res,
                                         "timestamp": datetime.now().isoformat(),
                                     }
@@ -636,7 +742,14 @@ class InvestigativeREPL:
                             f"[warning]Template '{template_name}' unknown.[/warning]"
                         )
                 else:
-                    self.process_query(user_input)
+                    # Parse as-of for NL queries too
+                    as_of = None
+                    parts = user_input.split(" --as-of ")
+                    question = parts[0]
+                    if len(parts) > 1:
+                        as_of = parts[1].strip()
+                    
+                    self.process_query(question, as_of=as_of)
         except (KeyboardInterrupt, EOFError):
             self.console.print("\n[brand]Emergency exit sequence initiated.[/brand]")
         finally:

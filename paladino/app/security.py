@@ -42,6 +42,7 @@ async def verify_api_key(
     Raises:
         HTTPException: 401 if invalid API key provided
     """
+    print(f"\nDEBUG: verify_api_key called. creds={creds}, api_keys={getattr(settings, 'api_keys', None)}\n")
     # Get valid API keys from settings
     valid_keys = (
         settings.api_keys.split(",") if hasattr(settings, "api_keys") and settings.api_keys else []
@@ -50,7 +51,7 @@ async def verify_api_key(
     # If no keys configured and no creds provided, allow (for development)
     if not valid_keys and creds is None:
         logger.warning("No API keys configured - authentication disabled")
-        return None
+        return "development"
 
     # If no creds provided but keys exist, reject
     if creds is None:
@@ -279,7 +280,7 @@ class QueryAuditor:
 
     def log_query(
         self,
-        request: Request,
+        request: Request | None,
         query_type: str,
         template_name: str | None = None,
         cypher: str | None = None,
@@ -296,7 +297,7 @@ class QueryAuditor:
 
         audit_entry = {
             "timestamp": datetime.utcnow().isoformat(),
-            "request_id": getattr(request.state, "request_id", "unknown"),
+            "request_id": getattr(request.state, "request_id", "unknown") if request else "unknown",
             "user_id": self._get_user_id(api_key),
             "query_type": query_type,
             "template_name": template_name,
@@ -306,8 +307,8 @@ class QueryAuditor:
             "execution_time_ms": execution_time_ms,
             "status": status,
             "error": error,
-            "ip_address": request.client.host if request.client else "unknown",
-            "user_agent": request.headers.get("user-agent", "unknown"),
+            "ip_address": request.client.host if request and request.client else "unknown",
+            "user_agent": request.headers.get("user-agent", "unknown") if request else "unknown",
         }
 
         # Log to structured audit log

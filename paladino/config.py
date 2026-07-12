@@ -32,6 +32,7 @@ class Settings(BaseSettings):
 
     # External API Keys (convenience aliases)
     openai_api_key: str | None = None
+    openrouter_api_key: str | None = None
     groq_api_key: str | None = None
     anthropic_api_key: str | None = None
 
@@ -65,6 +66,8 @@ class Settings(BaseSettings):
     enable_audit_logging: bool = True
     audit_retention_days: int = 90
     audit_log_dir: Path = base_dir / "audit_logs"
+    audit_log_to_file: bool = True
+    audit_log_to_db: bool = False
 
     # API configuration
     api_host: str = "0.0.0.0"

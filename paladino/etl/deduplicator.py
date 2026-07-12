@@ -308,3 +308,476 @@ Are Entity 1 and Entity 2 the SAME {entity_type}?"""
         except Exception as e:
             logger.error(f"Error merging nodes {source_node_id} and {target_node_id}: {e}")
             raise
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # New Methods for API Integration
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def find_candidates_for_entity(
+        self,
+        entity_id: str,
+        entity_type: str = "Company",
+        min_similarity: float = 0.75,
+        limit: int = 20,
+    ) -> list[dict]:
+        """
+        Find duplicate candidates for a specific entity.
+        Used by the /companies/duplicates endpoint.
+
+        Args:
+            entity_id: Entity ID, CF, or P.IVA to search for
+            entity_type: Type of entity (Company, Person, etc.)
+            min_similarity: Minimum similarity score threshold
+            limit: Maximum number of candidates to return
+
+        Returns:
+            List of candidate dictionaries with similarity scores and match reasons
+        """
+        query = """
+        MATCH (target)
+        WHERE target.id = $entity_id OR target.cf = $entity_id OR target.piva = $entity_id
+        WITH target
+
+        // Candidate selection with multi-pass blocking
+        OPTIONAL MATCH (candidate)
+        WHERE candidate:Company
+          AND candidate.id <> target.id
+
+        // Scoring logic
+        WITH target, candidate,
+             CASE
+                WHEN target.cf = candidate.cf AND target.cf IS NOT NULL THEN 1.0
+                WHEN target.piva = candidate.piva AND target.piva IS NOT NULL THEN 0.95
+                ELSE apoc.text.levenshteinSimilarity(
+                    target.nome_normalizzato,
+                    candidate.nome_normalizzato
+                )
+             END as score
+
+        WHERE score >= $min_similarity
+        RETURN
+            candidate.id as entity_id,
+            candidate.cf as cf,
+            candidate.piva as piva,
+            candidate.nome_normalizzato,
+            score as similarity_score,
+            CASE
+                WHEN target.cf = candidate.cf THEN 'exact_cf_match'
+                WHEN target.piva = candidate.piva THEN 'exact_piva_match'
+                ELSE 'fuzzy_name_match'
+            END as match_reason,
+            properties(candidate) as properties
+        ORDER BY score DESC
+        LIMIT $limit
+        """
+
+        results = self.driver.run_query(
+            query,
+            {
+                "entity_id": entity_id,
+                "min_similarity": min_similarity,
+                "limit": limit,
+            },
+        )
+
+        return results
+
+    def merge_with_rollback(
+        self,
+        source_ids: list[str],
+        target_id: str,
+        labels: list[str],
+        dry_run: bool = False,
+    ) -> dict:
+        """
+        Merge nodes with rollback snapshot creation.
+
+        Args:
+            source_ids: List of source entity IDs to merge
+            target_id: Target entity ID to merge into
+            labels: List of Neo4j labels for the entities
+            dry_run: If True, preview merge without committing
+
+        Returns:
+            Dictionary with merge results and rollback_id (if not dry_run)
+        """
+        import uuid
+        from datetime import datetime
+
+        # Generate rollback ID
+        rollback_id = f"merge_{datetime.now().isoformat()}_{uuid.uuid4().hex[:8]}"
+
+        if dry_run:
+            # Simulate merge and return preview
+            return self._preview_merge(source_ids, target_id, labels, rollback_id)
+
+        # Create rollback snapshot
+        self._create_rollback_snapshot(rollback_id, source_ids, target_id, labels)
+
+        # Execute merge
+        result = self._execute_merge(source_ids, target_id, labels)
+
+        # Record merge in audit log
+        self._log_merge(rollback_id, source_ids, target_id, result)
+
+        return {
+            "rollback_id": rollback_id,
+            **result,
+        }
+
+    def _preview_merge(
+        self, source_ids: list[str], target_id: str, labels: list[str], rollback_id: str
+    ) -> dict:
+        """Preview merge operation without committing."""
+        query = """
+        MATCH (target)
+        WHERE target.id = $target_id OR target.cf = $target_id OR target.piva = $target_id
+
+        OPTIONAL MATCH (source)
+        WHERE source.id IN $source_ids
+
+        RETURN
+            target.id as target_id,
+            collect(DISTINCT source.id) as source_ids,
+            properties(target) as target_properties,
+            [source | properties(source)] as source_properties,
+            size([(source)-[]-() | 1]) as relationships_to_update
+        """
+
+        results = self.driver.run_query(
+            query, {"target_id": target_id, "source_ids": source_ids}
+        )
+
+        if not results or not results[0]["target_id"]:
+            return {
+                "status": "error",
+                "error": "Target entity not found",
+                "rollback_id": rollback_id,
+            }
+
+        result = results[0]
+        return {
+            "status": "dry_run",
+            "target_id": result["target_id"],
+            "source_ids": result["source_ids"],
+            "properties_to_merge": result["source_properties"],
+            "relationships_to_update": result["relationships_to_update"],
+            "rollback_id": rollback_id,
+        }
+
+    def _create_rollback_snapshot(
+        self, rollback_id: str, source_ids: list[str], target_id: str, labels: list[str]
+    ):
+        """Create a rollback snapshot node with all pre-merge state."""
+        query = """
+        MATCH (target)
+        WHERE target.id = $target_id OR target.cf = $target_id OR target.piva = $target_id
+
+        OPTIONAL MATCH (source)
+        WHERE source.id IN $source_ids
+
+        // Create rollback snapshot
+        CREATE (rollback:MergeRollback {
+            id: $rollback_id,
+            created_at: datetime(),
+            target_id: $target_id,
+            source_ids: $source_ids,
+            labels: $labels,
+            target_snapshot: properties(target),
+            source_snapshots: [
+                (source) | {id: source.id, properties: properties(source)}
+            ]
+        })
+
+        RETURN rollback.id as id
+        """
+
+        self.driver.run_query(
+            query,
+            {
+                "rollback_id": rollback_id,
+                "target_id": target_id,
+                "source_ids": source_ids,
+                "labels": labels,
+            },
+        )
+
+        logger.info(f"Created rollback snapshot: {rollback_id}")
+
+    def _execute_merge(
+        self, source_ids: list[str], target_id: str, labels: list[str]
+    ) -> dict:
+        """Execute the actual merge operation."""
+        # Count relationships before merge
+        rel_count_query = """
+        MATCH (source)
+        WHERE source.id IN $source_ids
+        RETURN count{(source)--()} as rel_count
+        """
+
+        rel_results = self.driver.run_query(rel_count_query, {"source_ids": source_ids})
+        relationships_count = rel_results[0]["rel_count"] if rel_results else 0
+
+        # Merge all sources into target
+        merged_count = 0
+        for source_id in source_ids:
+            try:
+                self._merge_nodes_and_relationships(source_id, target_id, labels, "api_merge")
+                merged_count += 1
+            except Exception as e:
+                logger.error(f"Failed to merge {source_id} into {target_id}: {e}")
+
+        # Migrate comments from source entities to target
+        comments_migrated = self._migrate_comments(source_ids, target_id, labels)
+
+        return {
+            "merged_count": merged_count,
+            "relationships_updated": relationships_count,
+            "comments_migrated": comments_migrated,
+        }
+
+    def _log_merge(
+        self, rollback_id: str, source_ids: list[str], target_id: str, result: dict
+    ):
+        """Record merge operation in audit log."""
+        log_query = """
+        MATCH (rollback:MergeRollback {id: $rollback_id})
+        SET rollback.status = 'COMPLETED',
+            rollback.merged_count = $merged_count,
+            rollback.relationships_updated = $relationships_updated
+        """
+
+        self.driver.run_query(
+            log_query,
+            {
+                "rollback_id": rollback_id,
+                "merged_count": result["merged_count"],
+                "relationships_updated": result["relationships_updated"],
+            },
+        )
+
+        # Create a merge rationale comment for audit trail
+        try:
+            self.create_merge_rationale_comment(
+                target_id=target_id,
+                entity_type="Company",  # Default, could be parameterized
+                source_ids=source_ids,
+                rollback_id=rollback_id,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to create merge rationale comment: {e}")
+
+    def rollback_merge(self, rollback_id: str) -> dict:
+        """Restore pre-merge state from rollback snapshot."""
+        # First, get the source IDs from the rollback snapshot
+        snapshot_query = """
+        MATCH (rollback:MergeRollback {id: $rollback_id})
+        RETURN rollback.source_ids as source_ids, rollback.target_id as target_id
+        """
+        
+        snapshot_result = self.driver.run_query(snapshot_query, {"rollback_id": rollback_id})
+        if not snapshot_result:
+            raise ValueError(f"Rollback snapshot {rollback_id} not found")
+        
+        source_ids = snapshot_result[0]["source_ids"]
+        target_id = snapshot_result[0]["target_id"]
+        
+        # Store which comments belong to which original source
+        # Comments migrated during merge are tagged with 'migrated-from-merge'
+        # We'll re-distribute them to the first source entity (simplified approach)
+        # A more sophisticated approach would track original comment ownership
+        
+        query = """
+        MATCH (rollback:MergeRollback {id: $rollback_id})
+        WITH rollback
+
+        // Restore target node
+        MATCH (target)
+        WHERE target.id = rollback.target_id
+        SET target = rollback.target_snapshot
+
+        // Recreate source nodes
+        UNWIND rollback.source_snapshots as source_data
+        CREATE (source:Company {id: source_data.id})
+        SET source = source_data.properties
+
+        // Re-point migrated comments back to the first source entity
+        // This is a simplified approach - in production, you might want to preserve
+        // all comments on the target or distribute them based on original ownership
+        MATCH (c:Comment {entity_id: rollback.target_id})
+        WHERE 'migrated-from-merge' IN c.tags
+        SET c.entity_id = rollback.source_ids[0]
+        REMOVE c.tags
+
+        // Mark rollback as completed
+        SET rollback.rolled_back_at = datetime(),
+            rollback.status = 'ROLLED_BACK'
+
+        RETURN count(source) as sources_restored
+        """
+
+        result = self.driver.run_query(query, {"rollback_id": rollback_id})
+        
+        # Delete merge rationale comments created during the merge
+        try:
+            self._cleanup_merge_comments(rollback_id)
+        except Exception as e:
+            logger.warning(f"Failed to cleanup merge comments during rollback: {e}")
+        
+        return {"sources_restored": result[0]["sources_restored"] if result else 0}
+
+    def _cleanup_merge_comments(self, rollback_id: str) -> int:
+        """
+        Remove merge rationale comments created during a merge when rolling back.
+        
+        Args:
+            rollback_id: The rollback ID to identify merge comments
+            
+        Returns:
+            Number of comments cleaned up
+        """
+        # Find and delete merge rationale comments by searching for the rollback_id in content
+        query = """
+        MATCH (c:Comment)
+        WHERE c.entity_type = 'Company' 
+          AND 'merge-rationale' IN c.tags
+          AND c.content CONTAINS $rollback_id
+        DETACH DELETE c
+        RETURN count(c) as deleted_count
+        """
+        
+        result = self.driver.run_query(query, {"rollback_id": rollback_id})
+        deleted_count = result[0]["deleted_count"] if result else 0
+        
+        if deleted_count > 0:
+            logger.info(f"Cleaned up {deleted_count} merge rationale comments for rollback {rollback_id}")
+        
+        return deleted_count
+
+    def _migrate_comments(
+        self, source_ids: list[str], target_id: str, labels: list[str]
+    ) -> int:
+        """
+        Migrate comments from source entities to target entity.
+
+        When entities are merged, their comments should be preserved and
+        re-pointed to the surviving (target) entity.
+
+        Args:
+            source_ids: List of source entity IDs being merged away
+            target_id: Target entity ID surviving the merge
+            labels: List of Neo4j labels for the entities
+
+        Returns:
+            Number of comments migrated
+        """
+        query = """
+        MATCH (c:Comment)
+        WHERE c.entity_id IN $source_ids
+        SET c.entity_id = $target_id,
+            c.tags = c.tags + ['migrated-from-merge']
+        RETURN count(c) as migrated_count
+        """
+
+        result = self.driver.run_query(
+            query,
+            {
+                "source_ids": source_ids,
+                "target_id": target_id,
+            },
+        )
+
+        migrated_count = result[0]["migrated_count"] if result else 0
+
+        if migrated_count > 0:
+            logger.info(f"Migrated {migrated_count} comments from source entities to {target_id}")
+
+        return migrated_count
+
+    def create_merge_rationale_comment(
+        self, target_id: str, entity_type: str, source_ids: list[str], 
+        rollback_id: str, author: str = "system"
+    ) -> str:
+        """
+        Create a system comment documenting the merge rationale.
+
+        This provides an audit trail directly on the merged entity, making
+        it clear why the merge occurred and which entities were combined.
+
+        Args:
+            target_id: Target entity ID that survived the merge
+            entity_type: Type of entity (e.g., "Company")
+            source_ids: List of source entity IDs that were merged away
+            rollback_id: Rollback snapshot ID for audit reference
+            author: Author identifier (default: "system")
+
+        Returns:
+            ID of the created comment
+        """
+        import uuid
+        from datetime import datetime, UTC
+
+        comment_id = str(uuid.uuid4())
+        now = datetime.now(UTC)
+
+        source_list = ", ".join(source_ids)
+        content = (
+            f"**Entity Merge Executed**\n\n"
+            f"This entity is the result of merging the following duplicates:\n"
+            f"- **Source entities**: {source_list}\n"
+            f"- **Rollback ID**: `{rollback_id}`\n"
+            f"- **Merge date**: {now.isoformat()}\n\n"
+            f"This merge was performed via the Paladino API. Use the rollback ID "
+            f"to undo this operation if needed."
+        )
+
+        query = """
+        CREATE (c:Comment {
+            id: $id,
+            entity_id: $entity_id,
+            entity_type: $entity_type,
+            author: $author,
+            content: $content,
+            parent_comment_id: null,
+            tags: ['merge-rationale', 'system', 'audit'],
+            mentions: [],
+            is_deleted: false,
+            created_at: $created_at,
+            edited_at: null,
+            source: 'system',
+            confidence: 1.0
+        })
+        RETURN c.id as id
+        """
+
+        result = self.driver.run_query(
+            query,
+            {
+                "id": comment_id,
+                "entity_id": target_id,
+                "entity_type": entity_type,
+                "author": author,
+                "content": content,
+                "created_at": now.isoformat(),
+            },
+        )
+
+        logger.info(f"Created merge rationale comment {comment_id} for {entity_type}:{target_id}")
+
+        return comment_id
+
+    def get_merge_history(self, limit: int = 50) -> list[dict]:
+        """Get recent merge operations for audit."""
+        query = """
+        MATCH (r:MergeRollback)
+        RETURN r.id as rollback_id,
+               r.created_at as created_at,
+               r.target_id as target_id,
+               r.source_ids as source_ids,
+               r.status as status,
+               r.merged_count as merged_count
+        ORDER BY r.created_at DESC
+        LIMIT $limit
+        """
+
+        return self.driver.run_query(query, {"limit": limit})

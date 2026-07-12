@@ -7,7 +7,7 @@ Uses mock Neo4j connections so tests run without a live database.
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -18,6 +18,14 @@ from paladino.app.ubo_report_generator import UBOReportGenerator
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+@pytest.fixture(autouse=True)
+def mock_rich_console():
+    """Mock rich console to avoid Windows Unicode encoding issues."""
+    with patch("paladino.analytics.ownership_graph._console"):
+        with patch("paladino.analytics.shell_company_detector._console", create=True):
+            yield
+
+
 def _mock_conn(query_results: dict | None = None) -> MagicMock:
     """
     Return a mock :class:`Neo4jConnection` whose ``run_query()`` returns
@@ -25,7 +33,19 @@ def _mock_conn(query_results: dict | None = None) -> MagicMock:
 
     If a keyword is not found, returns [].
     """
+    # Order matters! More specific patterns should come first
     default_results = {
+        # Directors query - must come before Company query
+        "REPRESENTS": [
+            {
+                "person_cf": "RSSMRA80A01H501Z",
+                "name": "Mario Rossi",
+                "role": "Amministratore",
+                "start_date": "2010-01-01",
+                "end_date": None,
+            }
+        ],
+        # Company info query
         "Company {cf": [
             {
                 "cf": "12345678901",
@@ -40,17 +60,11 @@ def _mock_conn(query_results: dict | None = None) -> MagicMock:
         ],
         "AWARDED": [],
         "SHAREHOLDER_OF": [],
-        "REPRESENTS": [
-            {
-                "person_cf": "RSSMRA80A01H501Z",
-                "name": "Mario Rossi",
-                "role": "Amministratore",
-                "start_date": "2010-01-01",
-                "end_date": None,
-            }
-        ],
         "FLAGGED_BY": [],
         "SUBCONTRACTS_TO": [],
+        # Ownership chain query patterns
+        "MATCH (c:Company": [],  # Empty ownership chain for basic tests
+        "MATCH (p:Person)": [],  # No corporate family
     }
     if query_results:
         default_results.update(query_results)
@@ -74,7 +88,15 @@ def _mock_conn(query_results: dict | None = None) -> MagicMock:
 
 
 def _make_generator(query_results=None) -> UBOReportGenerator:
-    return UBOReportGenerator(conn=_mock_conn(query_results))
+    # Patch the ownership analyzer and shell detector to return simple lists
+    with patch.object(UBOReportGenerator, "_get_shell_risk", return_value={"score": 0.2}):
+        with patch.object(UBOReportGenerator, "_get_fraud_patterns", return_value=[]):
+            gen = UBOReportGenerator(conn=_mock_conn(query_results))
+            # Override the ownership analyzer methods to return lists
+            gen._ownership_analyzer.get_ownership_chain = MagicMock(return_value=[])
+            gen._ownership_analyzer.get_corporate_family = MagicMock(return_value=[])
+            gen._ownership_analyzer.get_supply_chain = MagicMock(return_value=[])
+            return gen
 
 
 # ─────────────────────────────────────────────────────────────────────────────

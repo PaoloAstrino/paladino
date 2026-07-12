@@ -6,6 +6,7 @@ Provides a unified interface for the Paladino ecosystem.
 import io
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import requests
@@ -55,6 +56,8 @@ class MaintenanceChoice:
     FRAUD_DETECTION = "Run Fraud Pattern Detection 🔴"
     SUPPLY_CHAIN_ETL = "Run Supply Chain ETL 🔗"
     TEMPORAL_ANALYSIS = "Run Temporal Analysis 📈"
+    CONFIDENCE_PROPAGATION = "Run Confidence Propagation Sweep 🛡️"
+    TEMPORAL_ORACLE = "Run Temporal Oracle (Network Drift) 🔮"
     BACK = "Back to Strategic Hub 🔙"
 
 
@@ -171,6 +174,15 @@ def show_maintenance_menu() -> None:
 
         if choice == MaintenanceChoice.BACK or choice is None:
             return
+
+        if choice == MaintenanceChoice.CONFIDENCE_PROPAGATION:
+            # Call the click command directly
+            ctx.invoke(confidence_sweep_cmd)
+            continue
+
+        if choice == MaintenanceChoice.TEMPORAL_ORACLE:
+            ctx.invoke(oracle_temporal_cmd)
+            continue
 
         script_name = ETL_SCRIPTS.get(choice.split(" (")[0])  # Extract key from display text
         if script_name:
@@ -341,6 +353,7 @@ def setup_llm_config() -> None:
         "Select LLM provider:",
         choices=[
             "Ollama (Local, Free)",
+            "OpenRouter (Free & Paid Models)",
             "OpenAI API",
             "Groq API",
             "Anthropic API",
@@ -433,6 +446,12 @@ def setup_llm_config() -> None:
     else:
         # External API configuration
         api_config = {
+            "OpenRouter (Free & Paid Models)": {
+                "base_url": "https://openrouter.ai/api/v1",
+                "model_prompt": "Enter model name (e.g., meta-llama/llama-3.1-70b-instruct, mistralai/mistral-large, google/gemini-flash-1.5):",
+                "key_name": "OPENROUTER_API_KEY",
+                "env_key": "OPENROUTER_API_KEY",
+            },
             "OpenAI API": {
                 "base_url": "https://api.openai.com/v1",
                 "model_prompt": "Enter model name (e.g., gpt-4o, gpt-3.5-turbo):",
@@ -521,6 +540,7 @@ def setup_llm_config() -> None:
                     "LLM_API_KEY=",
                     "LLM_API_BASE=",
                     "OPENAI_API_KEY=",
+                    "OPENROUTER_API_KEY=",
                     "GROQ_API_KEY=",
                     "ANTHROPIC_API_KEY=",
                 ]
@@ -610,6 +630,12 @@ def preflight(target: str) -> None:
     help="Load extracted entities into Neo4j.",
 )
 @click.option(
+    "--resolve-connections",
+    is_flag=True,
+    default=False,
+    help="Match extracted entities against existing Neo4j graph and discover connections.",
+)
+@click.option(
     "--max-chars",
     default=12000,
     type=click.IntRange(1, 200000),
@@ -624,6 +650,7 @@ def preflight(target: str) -> None:
 def ingest_unstructured(
     source: str,
     to_neo4j: bool,
+    resolve_connections: bool,
     max_chars: int,
     chunk_overlap: int,
 ) -> None:
@@ -641,7 +668,7 @@ def ingest_unstructured(
         f"[info]Routing decision:[/info] {decision.route} ({decision.reason}) -> {decision.handler}"
     )
 
-    if decision.route == "structured":
+    if decision.route == "structured" and decision.handler != "custom_csv_import":
         message = (
             "[warning]Detected known structured source. Use dedicated ETL scripts instead "
             f"(hint: {decision.handler})[/warning]"
@@ -651,27 +678,525 @@ def ingest_unstructured(
         console.print(message)
         return
 
-    document = ingestor.ingest(source)
-    console.print(
-        f"[success]Extracted content from {document.source_type}: {document.source}[/success]"
+    if resolve_connections:
+        # Full pipeline: extract + resolve connections
+        from paladino.etl.ner_pipeline import UnstructuredNERPipeline
+        from paladino.llm_manager import LLMManager
+
+        console.print("[info]Extracting and resolving connections…[/info]")
+        llm = LLMManager()
+        ner_pipeline = UnstructuredNERPipeline(
+            llm_manager=llm,
+            max_chars_per_chunk=max_chars,
+            chunk_overlap=chunk_overlap,
+        )
+        report = ingestor.ingest_with_connections(
+            source=source,
+            ner_pipeline=ner_pipeline,
+            llm_manager=llm,
+        )
+
+        console.print(f"[success]Extracted {report.entities_extracted} entities[/success]")
+        console.print(f"[success]Matched {report.entities_matched} to existing graph[/success]")
+        console.print(f"[success]Created {report.entities_created} new nodes[/success]")
+        console.print(f"[success]Resolved {report.relationships_created} relationships[/success]")
+        console.print(f"[success]Found {report.implicit_connections_found} implicit connections[/success]")
+
+        if report.entity_matches:
+            console.print("\n[info]Entity Matches:[/info]")
+            for match in report.entity_matches:
+                status = f"→ matched [{match.matched_neo4j_label}] ({match.match_method}, {match.confidence:.2f})" if match.matched_neo4j_id else "→ CREATED NEW"
+                console.print(f"  {match.extracted_entity_type} '{match.extracted_entity_id}' {status}")
+
+        if report.discovered_paths:
+            console.print("\n[info]Discovered Paths:[/info]")
+            for path in report.discovered_paths:
+                console.print(f"  {path.from_entity} ↔ {path.to_entity} via {', '.join(path.via)} (length {path.path_length})")
+
+        if report.implicit_connections:
+            console.print("\n[info]Implicit Connections:[/info]")
+            for conn in report.implicit_connections:
+                console.print(f"  {conn.entity_a} ↔ {conn.entity_b} [{conn.discovery_type}] {conn.description}")
+
+        if report.warnings:
+            console.print("\n[warning]Warnings:[/warning]")
+            for w in report.warnings:
+                console.print(f"  ⚠ {w}")
+
+        if to_neo4j:
+            console.print("[info]Nodes already written to Neo4j via connection resolver.[/info]")
+    else:
+        # Extract only
+        document = ingestor.ingest(source)
+        console.print(
+            f"[success]Extracted content from {document.source_type}: {document.source}[/success]"
+        )
+
+        from paladino.etl.ner_pipeline import UnstructuredNERPipeline
+
+        pipeline = UnstructuredNERPipeline(
+            max_chars_per_chunk=max_chars,
+            chunk_overlap=chunk_overlap,
+        )
+        ner_result = pipeline.extract(document)
+
+        console.print_json(data=ner_result.model_dump())
+
+        if to_neo4j:
+            from paladino.etl.unstructured_loader import UnstructuredGraphLoader
+
+            loader = UnstructuredGraphLoader()
+            stats = loader.load(document, ner_result)
+            console.print(f"[success]Loaded to Neo4j: {stats}[/success]")
+
+
+@main.command("notebook")
+@click.option(
+    "--from-ingestion",
+    "report_file",
+    type=str,
+    default=None,
+    help="Path to a ConnectionReport JSON file to create a notebook from.",
+)
+@click.option(
+    "--from-alert",
+    "alert_id",
+    type=str,
+    default=None,
+    help="Alert ID to create a notebook from.",
+)
+@click.option("--title", type=str, default=None, help="Notebook title (auto-generated if omitted).")
+@click.option("--entity-id", "-e", multiple=True, help="Entity IDs to link (CF, CIG, CUP, etc.).")
+@click.option("--author", type=str, default="user", help="Notebook author.")
+@click.option("--list-notebooks", is_flag=True, help="List existing notebooks.")
+def notebook_cmd(
+    report_file: str | None,
+    alert_id: str | None,
+    title: str | None,
+    entity_id: tuple[str, ...],
+    author: str,
+    list_notebooks: bool,
+) -> None:
+    """📓 Investigation notebook management.
+
+    Create a notebook from a connection discovery report:
+
+        paladino notebook --from-ingestion report.json -e MRARSS80A01H501Z
+
+    Create a notebook from an alert:
+
+        paladino notebook --from-alert <alert-uuid>
+
+    List all notebooks:
+
+        paladino notebook --list
+    """
+    if list_notebooks:
+        from paladino.db import Neo4jConnection
+        from paladino.app.notebook_service import NotebookService
+
+        conn = Neo4jConnection()
+        service = NotebookService(conn)
+        notebooks, total = service.list_notebooks(
+            __import__("paladino.models", fromlist=["NotebookListParams"]).models.NotebookListParams()
+        )
+
+        if not notebooks:
+            console.print("[info]No notebooks found.[/info]")
+            return
+
+        console.print(f"\n[info]Notebooks ({total}):[/info]\n")
+        for nb in notebooks:
+            console.print(f"  [bold]{nb.title}[/bold] [{nb.status}] (id: {nb.id[:8]}...)")
+            console.print(f"    Author: {nb.author} | Created: {nb.created_at}")
+            if nb.linked_entity_ids:
+                console.print(f"    Entities: {', '.join(nb.linked_entity_ids[:5])}")
+            console.print()
+        return
+
+    if alert_id:
+        from paladino.db import Neo4jConnection
+        from paladino.app.notebook_service import NotebookService
+        from paladino.app.alert_service import AlertService
+        from paladino.models import (
+            NotebookCreate,
+            NotebookCellCreate,
+            NotebookCellType,
+        )
+
+        conn = Neo4jConnection()
+        service = NotebookService(conn)
+        alert_service = AlertService(conn)
+
+        alert = alert_service.get_alert(alert_id)
+        if not alert:
+            console.print(f"[error]Alert not found: {alert_id}[/error]")
+            conn.close()
+            raise click.Abort()
+
+        nb_title = title or f"Investigation: {alert.title}"
+
+        console.print(f"[info]Creating notebook from alert: {alert.title} [{alert.severity.value}][/info]")
+
+        entity_ids = [alert.entity_id] if alert.entity_id else list(entity_id)
+
+        nb_resp = service.create_notebook(
+            NotebookCreate(
+                title=nb_title,
+                description=f"Created from alert: {alert.title} [{alert.severity.value}]",
+                linked_entity_ids=entity_ids,
+                linked_alert_ids=[alert_id],
+                tags=["from-alert", alert.type.value, alert.severity.value],
+                author=author,
+            )
+        )
+
+        # Build cells
+        cells = [
+            NotebookCellCreate(
+                cell_type=NotebookCellType.MARKDOWN,
+                content=(
+                    f"## Alert Details\n\n"
+                    f"**Type:** `{alert.type.value}`\n\n"
+                    f"**Severity:** `{alert.severity.value}`\n\n"
+                    f"**Description:** {alert.description}\n\n"
+                    f"**Entity:** {alert.entity_type} ({alert.entity_id or 'N/A'})\n\n"
+                    f"**Triggered by:** {alert.triggered_by or 'system'}"
+                ),
+                position=0,
+                title="Alert Details",
+            ),
+        ]
+
+        if alert.entity_id:
+            cells.append(
+                NotebookCellCreate(
+                    cell_type=NotebookCellType.CYPHER_QUERY,
+                    content=f"MATCH (n {{id: $entity_id}})\nRETURN labels(n) AS type, properties(n) AS details",
+                    position=1,
+                    title="Entity Details",
+                    linked_entity_id=alert.entity_id,
+                ),
+            )
+            cells.append(
+                NotebookCellCreate(
+                    cell_type=NotebookCellType.CONNECTION_INSIGHT,
+                    content=f"Auto-discover implicit connections for {alert.entity_type}: {alert.entity_id}.",
+                    position=2,
+                    title="Discovered Connections",
+                    linked_entity_id=alert.entity_id,
+                ),
+            )
+
+        if alert.type.value == "fraud_pattern" and alert.entity_id:
+            cells.append(
+                NotebookCellCreate(
+                    cell_type=NotebookCellType.CYPHER_QUERY,
+                    content=(
+                        f"MATCH (n {{id: '{alert.entity_id}'}})-[:FLAGGED_BY]->(fp:FraudPattern)\n"
+                        f"RETURN fp.pattern_name, fp.severity, fp.description, fp.detected_at\n"
+                        f"ORDER BY fp.detected_at DESC"
+                    ),
+                    position=len(cells),
+                    title="Fraud Patterns",
+                    linked_entity_id=alert.entity_id,
+                ),
+            )
+
+        cells.append(
+            NotebookCellCreate(
+                cell_type=NotebookCellType.MARKDOWN,
+                content="## Findings\n\nDocument investigation findings and conclusions here.",
+                position=len(cells),
+                title="Findings",
+            ),
+        )
+
+        for cell_data in cells:
+            service.add_cell(nb_resp.id, cell_data)
+
+        console.print(f"[success]Notebook created: {nb_resp.id[:8]}...[/success]")
+        console.print(f"[success]Title: {nb_resp.title}[/success]")
+        console.print(f"[success]Cells: {len(cells)} (alert details, entity, connections, findings)[/success]")
+
+        conn.close()
+        return
+
+    if not report_file:
+        console.print("[info]Use --from-ingestion or --from-alert to create a notebook, or --list to browse existing.[/info]")
+        return
+
+    import json
+    from pathlib import Path
+
+    report_path = Path(report_file)
+    if not report_path.exists():
+        console.print(f"[error]Report file not found: {report_file}[/error]")
+        raise click.Abort()
+
+    try:
+        report_data = json.loads(report_path.read_text())
+    except json.JSONDecodeError as e:
+        console.print(f"[error]Invalid JSON in report: {e}[/error]")
+        raise click.Abort()
+
+    from paladino.db import Neo4jConnection
+    from paladino.app.notebook_service import NotebookService
+    from paladino.models import (
+        NotebookCreate,
+        NotebookCellCreate,
+        NotebookCellType,
     )
 
-    from paladino.etl.ner_pipeline import UnstructuredNERPipeline
+    conn = Neo4jConnection()
+    service = NotebookService(conn)
 
-    pipeline = UnstructuredNERPipeline(
-        max_chars_per_chunk=max_chars,
-        chunk_overlap=chunk_overlap,
+    nb_title = title or f"Investigation: {report_path.name}"
+    entities = list(entity_id) if entity_id else []
+
+    console.print(f"[info]Creating notebook: {nb_title}[/info]")
+
+    # Create notebook
+    nb_resp = service.create_notebook(
+        NotebookCreate(
+            title=nb_title,
+            description=f"Created from ingestion report: {report_path.name}",
+            linked_entity_ids=entities,
+            tags=["from-ingestion", report_path.name],
+            author=author,
+        )
     )
-    ner_result = pipeline.extract(document)
 
-    console.print_json(data=ner_result.model_dump())
+    # Add cells
+    cells = [
+        NotebookCellCreate(
+            cell_type=NotebookCellType.MARKDOWN,
+            content=f"## Ingestion Summary\n\n**Source:** `{report_path.name}`\n\n"
+                    f"- Entities extracted: {report_data.get('entities_extracted', 0)}\n"
+                    f"- Matched to graph: {report_data.get('entities_matched', 0)}\n"
+                    f"- Created new: {report_data.get('entities_created', 0)}\n"
+                    f"- Relationships resolved: {report_data.get('relationships_created', 0)}\n"
+                    f"- Implicit connections: {report_data.get('implicit_connections_found', 0)}",
+            position=0,
+            title="Overview",
+        ),
+        NotebookCellCreate(
+            cell_type=NotebookCellType.CYPHER_QUERY,
+            content=f"MATCH (n)\nWHERE '{report_path.name}' IN coalesce(n.source, [])\nRETURN labels(n) AS type, count(n) AS count\nORDER BY count DESC",
+            position=1,
+            title="Entities from Source",
+        ),
+    ]
 
-    if to_neo4j:
-        from paladino.etl.unstructured_loader import UnstructuredGraphLoader
+    if entities:
+        cells.append(
+            NotebookCellCreate(
+                cell_type=NotebookCellType.CONNECTION_INSIGHT,
+                content=f"Auto-discover implicit connections between linked entities.",
+                position=2,
+                title="Discovered Connections",
+                linked_entity_id=entities[0],
+            ),
+        )
 
-        loader = UnstructuredGraphLoader()
-        stats = loader.load(document, ner_result)
-        console.print(f"[success]Loaded to Neo4j: {stats}[/success]")
+    cells.append(
+        NotebookCellCreate(
+            cell_type=NotebookCellType.MARKDOWN,
+            content="## Findings\n\nDocument key findings and conclusions here.",
+            position=3,
+            title="Findings",
+        ),
+    )
+
+    for cell_data in cells:
+        service.add_cell(nb_resp.id, cell_data)
+
+    console.print(f"[success]Notebook created: {nb_resp.id[:8]}...[/success]")
+    console.print(f"[success]Title: {nb_resp.title}[/success]")
+    console.print(f"[success]Cells: {len(cells)} (overview, entities, connections, findings)[/success]")
+
+    if report_data.get("implicit_connections"):
+        console.print(f"\n[info]Implicit Connections ({len(report_data['implicit_connections'])}):[/info]")
+        for conn in report_data["implicit_connections"]:
+            console.print(f"  {conn['entity_a']} ↔ {conn['entity_b']} [{conn['discovery_type']}]")
+
+    if report_data.get("entity_matches"):
+        matched = [m for m in report_data["entity_matches"] if m.get("matched_neo4j_id")]
+        created = [m for m in report_data["entity_matches"] if not m.get("matched_neo4j_id")]
+        console.print(f"\n[info]Entity Matches: {len(matched)} matched, {len(created)} new[/info]")
+        for m in matched[:10]:
+            console.print(f"  {m['extracted_entity_type']} → {m['matched_neo4j_label']} ({m['match_method']}, conf={m['confidence']:.2f})")
+
+
+@main.command("alerts")
+@click.option("--pending", is_flag=True, help="Show only pending alerts.")
+@click.option("--severity", type=str, default=None, help="Filter by severity (critical, high, medium, low, info).")
+@click.option("--limit", type=int, default=20, help="Maximum alerts to show.")
+@click.option("--dismiss", type=str, default=None, help="Dismiss alert by ID.")
+@click.option("--acknowledge", type=str, default=None, help="Acknowledge alert by ID.")
+@click.option("--run-generators", is_flag=True, help="Run all alert generators (fraud detection, risk analysis).")
+@click.option("--watch", is_flag=True, help="Watch mode: run generators every 5 minutes and notify on new alerts.")
+def alerts_cmd(
+    pending: bool,
+    severity: str | None,
+    limit: int,
+    dismiss: str | None,
+    acknowledge: str | None,
+    run_generators: bool,
+    watch: bool,
+) -> None:
+    """🔔 Alert management — view, dismiss, and run fraud detection generators."""
+    from paladino.db import Neo4jConnection
+    from paladino.app.alert_service import AlertService
+    from paladino.app.notification_dispatcher import NotificationDispatcher
+    from paladino.models import AlertListParams, AlertStatus, AlertUpdate
+
+    conn = Neo4jConnection()
+    service = AlertService(conn)
+
+    # Dismiss alert
+    if dismiss:
+        service.update_alert(dismiss, AlertUpdate(status=AlertStatus.DISMISSED))
+        console.print(f"[success]Alert {dismiss[:8]}... dismissed.[/success]")
+        conn.close()
+        return
+
+    # Acknowledge alert
+    if acknowledge:
+        service.update_alert(acknowledge, AlertUpdate(status=AlertStatus.ACKNOWLEDGED))
+        console.print(f"[success]Alert {acknowledge[:8]}... acknowledged.[/success]")
+        conn.close()
+        return
+
+    # Run generators
+    if run_generators:
+        console.print("[info]Running all alert generators…[/info]")
+        report = service.run_all_generators()
+        console.print(f"[success]Generators complete.[/success]")
+        console.print(f"  Alerts created: {report.alerts_created}")
+        console.print(f"  Patterns checked: {report.patterns_checked}")
+
+        # Dispatch new alerts
+        if report.alerts_created > 0:
+            dispatcher = NotificationDispatcher()
+            # Re-fetch pending alerts to dispatch
+            new_alerts, _ = service.list_alerts(AlertListParams(status=AlertStatus.PENDING, limit=report.alerts_created))
+            for alert in new_alerts:
+                results = dispatcher.dispatch(alert)
+                channels = [ch for ch, ok in results.items() if ok]
+                emoji = "🚨" if alert.severity.value in ("critical", "high") else "📋"
+                console.print(f"  {emoji} [{alert.severity.value}] {alert.title} → {', '.join(channels)}")
+
+        conn.close()
+        return
+
+    # Watch mode
+    if watch:
+        import time as _time
+        console.print("[info]Watch mode: checking every 5 minutes. Press Ctrl+C to stop.[/info]")
+        try:
+            while True:
+                console.print(f"\n[dim]Checking alerts at {datetime.now().strftime('%H:%M:%S')}…[/dim]")
+                report = service.run_all_generators()
+                if report.alerts_created > 0:
+                    dispatcher = NotificationDispatcher()
+                    new_alerts, _ = service.list_alerts(AlertListParams(status=AlertStatus.PENDING, limit=report.alerts_created))
+                    for alert in new_alerts:
+                        results = dispatcher.dispatch(alert)
+                        channels = [ch for ch, ok in results.items() if ok]
+                        emoji = "🚨" if alert.severity.value in ("critical", "high") else "📋"
+                        console.print(f"  {emoji} [{alert.severity.value}] {alert.title} → {', '.join(channels)}")
+                else:
+                    console.print("  [dim]No new alerts.[/dim]")
+                _time.sleep(300)  # 5 minutes
+        except KeyboardInterrupt:
+            console.print("\n[info]Watch mode stopped.[/info]")
+        conn.close()
+        return
+
+    # Default: list alerts
+    status_filter = AlertStatus.PENDING if pending else None
+    params = AlertListParams(status=status_filter, limit=limit)
+
+    alerts_list, total = service.list_alerts(params)
+
+    if not alerts_list:
+        console.print("[info]No alerts found.[/info]")
+        conn.close()
+        return
+
+    console.print(f"\n[info]Alerts ({total} total, showing {len(alerts_list)}):[/info]\n")
+    for alert in alerts_list:
+        emoji = {"critical": "🚨", "high": "⚠️", "medium": "🔶", "low": "🔵", "info": "ℹ️"}.get(
+            alert.severity.value, "📋"
+        )
+        status_icon = {"pending": "⏳", "acknowledged": "👁️", "resolved": "✅", "dismissed": "❌"}.get(
+            alert.status.value, "?"
+        )
+        console.print(
+            f"  {status_icon} {emoji} [{alert.severity.value}] {alert.title} "
+            f"[dim]({alert.id[:8]}… | {alert.entity_type}: {alert.entity_id or 'N/A'})[/dim]"
+        )
+
+    console.print(f"\n[dim]Dismiss: paladino alerts --dismiss <id>[/dim]")
+    console.print(f"[dim]Acknowledge: paladino alerts --acknowledge <id>[/dim]")
+    console.print(f"[dim]Run generators: paladino alerts --run-generators[/dim]")
+    console.print(f"[dim]Watch mode: paladino alerts --watch[/dim]")
+
+    conn.close()
+
+
+@main.command("confidence-sweep")
+@click.option("--passes", default=3, help="Number of propagation passes")
+def confidence_sweep_cmd(passes: int) -> None:
+    """🛡️ Run Trust Model propagation sweep."""
+    console.print(Panel("🛡️ Running Confidence Propagation Sweep...", border_style="cyan"))
+    
+    from paladino.db import Neo4jConnection
+    from paladino.analytics.confidence_engine import ConfidencePropagator
+    
+    try:
+        conn = Neo4jConnection()
+        propagator = ConfidencePropagator(conn)
+        propagator.initialize_derived_scores()
+        propagator.run_propagation_sweep(max_passes=passes)
+        stats = propagator.get_confidence_stats()
+        
+        from rich.table import Table
+        table = Table(title="Confidence Distribution")
+        table.add_column("Metric", style="cyan")
+        table.add_column("Value", style="green")
+        table.add_row("Total Entities", str(stats.get('total')))
+        table.add_row("Average Trust", f"{stats.get('average', 0):.4f}")
+        table.add_row("High Trust (>= 0.95)", str(stats.get('high_trust')))
+        table.add_row("Low Trust (< 0.75)", str(stats.get('low_trust')))
+        console.print(table)
+        
+    except Exception as e:
+        console.print(f"[red]Sweep failed: {e}[/red]")
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+
+@main.command("oracle-temporal")
+def oracle_temporal_cmd() -> None:
+    """🔮 Run Temporal Oracle to detect significant network drift."""
+    console.print(Panel("🔮 Running Temporal Oracle Scan...", border_style="magenta"))
+    
+    from paladino.db import Neo4jConnection
+    from paladino.analytics.temporal_oracle import TemporalOracle
+    
+    try:
+        conn = Neo4jConnection()
+        oracle = TemporalOracle(conn)
+        oracle.run_full_scan()
+        console.print("[success]✅ Temporal Oracle scan completed. Check the graph for new TemporalAlert nodes.[/success]")
+    except Exception as e:
+        console.print(f"[error]Oracle failed: {e}[/error]")
+    finally:
+        if 'conn' in locals():
+            conn.close()
 
 
 if __name__ == "__main__":

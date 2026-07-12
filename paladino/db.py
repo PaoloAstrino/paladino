@@ -31,9 +31,7 @@ class Neo4jSettings(BaseSettings):
     password: str = settings.neo4j_password
     database: str = settings.neo4j_database
 
-    class Config:
-        env_prefix = "NEO4J_"
-        env_file = ".env"
+    model_config = {"env_prefix": "NEO4J_", "env_file": ".env", "extra": "ignore"}
 
 
 class Neo4jConnection:

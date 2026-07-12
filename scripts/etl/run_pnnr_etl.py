@@ -32,28 +32,40 @@ def main():
     # 2. Process PNRR Soggetti (Large file)
     soggetti_path = settings.data_dir / "pnnr" / "PNRR_Soggetti.csv"
     if soggetti_path.exists():
-        logger.info(f"Reading {soggetti_path}")
-        # Using semicolon separator based on previous Get-Content check
-        df_soggetti = pl.read_csv(soggetti_path, separator=";", ignore_errors=True)
+        logger.info(f"Processing {soggetti_path} in streaming batches...")
+        
+        # Using read_csv_batched for memory efficiency
+        reader = pl.read_csv_batched(soggetti_path, separator=";", ignore_errors=True, batch_size=100_000)
+        
+        batches = reader.next_batches(1)
+        while batches:
+            df_batch = batches[0]
+            logger.info(f"Transforming batch of {len(df_batch)} rows...")
+            data_soggetti = transformer.transform_soggetti(df_batch)
 
-        data_soggetti = transformer.transform_soggetti(df_soggetti)
-
-        loader.load_companies(data_soggetti["companies"])
-        loader.load_involvement(data_soggetti["involvement"])
+            loader.load_companies(data_soggetti["companies"])
+            loader.load_involvement(data_soggetti["involvement"])
+            
+            batches = reader.next_batches(1)
     else:
         logger.warning(f"File not found: {soggetti_path}")
 
     # 3. Process PNRR Subappaltatori
     sub_path = settings.data_dir / "pnnr" / "PNRR_Subappaltatori_Gare.csv"
     if sub_path.exists():
-        logger.info(f"Reading {sub_path}")
-        df_sub = pl.read_csv(sub_path, separator=";", ignore_errors=True)
+        logger.info(f"Processing {sub_path} in streaming batches...")
+        reader = pl.read_csv_batched(sub_path, separator=";", ignore_errors=True, batch_size=50_000)
+        
+        batches = reader.next_batches(1)
+        while batches:
+            df_batch = batches[0]
+            data_sub = transformer.transform_subappaltatori(df_batch)
 
-        data_sub = transformer.transform_subappaltatori(df_sub)
-
-        loader.load_companies(data_sub["companies"])
-        loader.load_sub_contracts(data_sub["sub_contracts"])  # sub → Tender
-        loader.load_subcontracts_to(data_sub["sub_contracts"])  # winner → sub (supply chain)
+            loader.load_companies(data_sub["companies"])
+            loader.load_sub_contracts(data_sub["sub_contracts"])
+            loader.load_subcontracts_to(data_sub["sub_contracts"])
+            
+            batches = reader.next_batches(1)
     else:
         logger.warning(f"File not found: {sub_path}")
 

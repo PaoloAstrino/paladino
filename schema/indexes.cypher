@@ -129,9 +129,139 @@ CREATE INDEX idx_related_to_relation_type IF NOT EXISTS
 FOR ()-[r:RELATED_TO]-() ON (r.relation_type);
 
 // ============================================================================
+// MERGE & DEDUPLICATION INDEXES
+// ============================================================================
+
+// Uniqueness constraints for deduplication
+CREATE CONSTRAINT company_cf_unique IF NOT EXISTS
+FOR (c:Company) REQUIRE c.cf IS UNIQUE;
+
+CREATE CONSTRAINT company_piva_unique IF NOT EXISTS
+FOR (c:Company) REQUIRE c.piva IS UNIQUE;
+
+// Index for merge review queries
+CREATE INDEX idx_company_merge_candidates IF NOT EXISTS
+FOR (c:Company) ON (c.nome_normalizzato, c.cod_istat);
+
+// Index for rollback snapshots
+CREATE INDEX idx_merge_rollback_id IF NOT EXISTS
+FOR (r:MergeRollback) ON (r.id);
+
+CREATE INDEX idx_merge_rollback_created IF NOT EXISTS
+FOR (r:MergeRollback) ON (r.created_at);
+
+// ============================================================================
+// COMMENT INDEXES
+// ============================================================================
+
+// Full-text search on comment content
+CREATE TEXT INDEX idx_comment_content IF NOT EXISTS
+FOR (c:Comment) ON (c.content);
+
+// Lookup indexes for filtering
+CREATE INDEX idx_comment_entity_id IF NOT EXISTS
+FOR (c:Comment) ON (c.entity_id);
+
+CREATE INDEX idx_comment_entity_type IF NOT EXISTS
+FOR (c:Comment) ON (c.entity_type);
+
+CREATE INDEX idx_comment_author IF NOT EXISTS
+FOR (c:Comment) ON (c.author);
+
+CREATE INDEX idx_comment_tags IF NOT EXISTS
+FOR (c:Comment) ON (c.tags);
+
+CREATE INDEX idx_comment_is_deleted IF NOT EXISTS
+FOR (c:Comment) ON (c.is_deleted);
+
+// Composite index for common comment queries (entity filtering)
+CREATE INDEX idx_comment_entity IF NOT EXISTS
+FOR (c:Comment) ON (c.entity_id, c.entity_type);
+
+// Temporal index for sorting
+CREATE INDEX idx_comment_created_at IF NOT EXISTS
+FOR (c:Comment) ON (c.created_at);
+
+CREATE INDEX idx_comment_edited_at IF NOT EXISTS
+FOR (c:Comment) ON (c.edited_at);
+
+// Index for threaded comments (parent lookup)
+CREATE INDEX idx_comment_parent_id IF NOT EXISTS
+FOR (c:Comment) ON (c.parent_comment_id);
+
+// Composite index for listing comments by entity with sorting
+CREATE INDEX idx_comment_entity_created IF NOT EXISTS
+FOR (c:Comment) ON (c.entity_id, c.entity_type, c.created_at);
+
+// ============================================================================
+// ALERT INDEXES
+// ============================================================================
+
+// Alert status filtering (most common filter)
+CREATE INDEX idx_alert_status IF NOT EXISTS
+FOR (a:Alert) ON (a.status);
+
+// Alert type filtering
+CREATE INDEX idx_alert_type IF NOT EXISTS
+FOR (a:Alert) ON (a.type);
+
+// Alert severity filtering
+CREATE INDEX idx_alert_severity IF NOT EXISTS
+FOR (a:Alert) ON (a.severity);
+
+// Alert entity lookup
+CREATE INDEX idx_alert_entity_id IF NOT EXISTS
+FOR (a:Alert) ON (a.entity_id);
+
+// Alert temporal sorting and date range queries
+CREATE INDEX idx_alert_created_at IF NOT EXISTS
+FOR (a:Alert) ON (a.created_at);
+
+// Alert deduplication hash lookup
+CREATE INDEX idx_alert_hash IF NOT EXISTS
+FOR (a:Alert) ON (a.alert_hash);
+
+// Composite index for common alert queries (status + created_at for dashboard)
+CREATE INDEX idx_alert_status_created IF NOT EXISTS
+FOR (a:Alert) ON (a.status, a.created_at);
+
+// Composite index for entity-specific alert queries
+CREATE INDEX idx_alert_entity_type_id IF NOT EXISTS
+FOR (a:Alert) ON (a.entity_type, a.entity_id);
+
+// Composite index for filtering by entity and sorting by date
+CREATE INDEX idx_alert_entity_created IF NOT EXISTS
+FOR (a:Alert) ON (a.entity_id, a.entity_type, a.created_at);
+
+// Codice Fiscale lookup
+CREATE INDEX idx_alert_entity_cf IF NOT EXISTS
+FOR (a:Alert) ON (a.entity_cf);
+
+// Rule ID lookup
+CREATE INDEX idx_alert_rule_id IF NOT EXISTS
+FOR (a:Alert) ON (a.rule_id);
+
+// ============================================================================
+// ALERT RULE INDEXES
+// ============================================================================
+
+// AlertRule enabled filtering (most common filter)
+CREATE INDEX idx_alert_rule_enabled IF NOT EXISTS
+FOR (r:AlertRule) ON (r.enabled);
+
+// AlertRule type filtering
+CREATE INDEX idx_alert_rule_type IF NOT EXISTS
+FOR (r:AlertRule) ON (r.alert_type);
+
+// AlertRule name lookup
+CREATE INDEX idx_alert_rule_name IF NOT EXISTS
+FOR (r:AlertRule) ON (r.name);
+
+// ============================================================================
 // PERFORMANCE NOTES
 // ============================================================================
 // - Text indexes enable CONTAINS/STARTS WITH queries
 // - Composite indexes optimize multi-filter queries
 // - Point indexes enable distance-based spatial queries
 // - Relationship indexes improve aggregation performance
+// - Uniqueness constraints prevent duplicate CF/P.IVA

@@ -29,6 +29,7 @@ def graphrag_agent(driver):
     return GraphRAGAgent(driver, schema_metadata=schema_metadata)
 
 
+@pytest.mark.skip(reason="Requires running Neo4j instance with data loaded")
 class TestGraphRAGAgentIntegration:
     """Integration tests for GraphRAG agent with live database."""
 

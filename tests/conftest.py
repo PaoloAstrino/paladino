@@ -4,6 +4,8 @@ import os
 # pydantic-settings can build Settings() without a real .env file.
 os.environ.setdefault("PALADINO_NEO4J_USER", "test")
 os.environ.setdefault("PALADINO_NEO4J_PASSWORD", "test")
+os.environ["PALADINO_API_KEYS"] = ""
+os.environ["API_KEYS"] = ""
 
 import json
 from unittest.mock import MagicMock
@@ -65,6 +67,40 @@ class MockRecord(dict):
         if "old_amount" in str(key).lower():
             return 1000000.0
 
+        # Keys for ConnectionResolver implicit connection discovery
+        if key == "name_a":
+            return "Test Company A"
+        if key == "name_b":
+            return "Test Company B"
+        if key == "person_name":
+            return "Test Person"
+        if key == "shared_count":
+            return 1
+        if key == "tender_cig":
+            return "Z1234567890"
+        if key == "shared_tenders":
+            return 1
+        if key == "region":
+            return "Lombardia"
+        if key == "co_occurrences":
+            return 1
+        if key == "old_price":
+            return 100000.0
+        if key == "old_amount":
+            return 1000000.0
+        if key == "current":
+            return 150000.0
+        if key == "current_amount":
+            return 1500000.0
+
+        # Additional keys for loader integration tests
+        if key == "popolazione":
+            return 1352000
+        if key == "method":
+            return "temporal"
+        if key == "old_status":
+            return "In corso"
+
         # Return 0 for count-like keys (common pattern in batch processing tests)
         if any(k in str(key).lower() for k in ["loaded", "updated", "count", "total"]):
             return 0  # Explicit default, not masking bugs
@@ -83,6 +119,13 @@ class MockResult:
 
     def __iter__(self):
         return iter(self._data)
+
+    def __getitem__(self, index):
+        """Allow list-like indexing so resolver code can do results[0]."""
+        return self._data[index]
+
+    def __len__(self):
+        return len(self._data)
 
     def single(self):
         return self._data[0] if self._data else MockRecord({"loaded": 1})

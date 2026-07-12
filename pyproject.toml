@@ -45,6 +45,8 @@ dependencies = [
     "langchain>=0.1.0",
     "langchain-openai>=0.0.5",
     "openai>=1.10.0",
+    # Export
+    "openpyxl>=3.1.0",
 
     # Utilities
     "click>=8.1.7",
@@ -61,6 +63,7 @@ dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
     "pytest-asyncio>=0.23.0",
+    "pytest-timeout>=2.0.0",
     "black>=24.1.0",
     "ruff>=0.1.0",
     "mypy>=1.8.0",
@@ -99,9 +102,17 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --cov=paladino --cov-report=term-missing"
+addopts = "-v --strict-markers --tb=short --disable-warnings"
 asyncio_default_fixture_loop_scope = "function"
+timeout = 300
+timeout_method = "thread"
 markers = [
+    "slow: marks tests as slow (E2E tests)",
+    "unit: marks tests as unit tests",
     "integration: marks tests as integration tests (Neo4j required)",
     "e2e: marks tests as end-to-end tests",
 ]
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"

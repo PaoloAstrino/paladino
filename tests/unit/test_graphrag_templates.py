@@ -38,7 +38,7 @@ class TestCypherQueryTemplates:
             "companies_by_region",
             "pnrr_projects",
             "tender_to_project",
-            "high_risk_companies",
+            "companies_with_high_risk",
             "top_vendors",
             "top_centrality_companies",
             "project_funding_analysis",

@@ -459,7 +459,7 @@ class TestDetectNetworkClique:
 
 
 class TestRunAllDetectors:
-    def test_returns_dict_with_all_thirteen_keys(self):
+    def test_returns_dict_with_all_fourteen_keys(self):
         lib, conn = make_library()
         results = lib.run_all_detectors()
         expected_keys = {
@@ -477,6 +477,8 @@ class TestRunAllDetectors:
             "carousel_fraud",
             "board_overlap_collusion",
             "subcontractor_concentration",
+            # Phase 3.2 addition
+            "shell_company_network",
         }
         assert set(results.keys()) == expected_keys
 

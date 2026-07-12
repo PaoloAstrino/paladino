@@ -37,9 +37,9 @@ def test_companies_by_region_template():
     assert "$region" in template
 
 
-def test_high_risk_companies_template():
+def test_companies_with_high_risk_template():
     """Test high risk companies template."""
-    template = CypherQueryTemplates.get_template("high_risk_companies")
+    template = CypherQueryTemplates.get_template("companies_with_high_risk")
 
     assert template is not None
     assert "risk_score" in template
@@ -76,9 +76,9 @@ def test_list_templates_completeness():
     """Test that list_templates returns all templates."""
     template_list = CypherQueryTemplates.list_templates()
 
-    assert len(template_list) >= 5
+    assert len(template_list) >= 20  # We have 25+ templates now
     assert "pnrr_projects" in template_list
     assert "companies_by_region" in template_list
-    assert "high_risk_companies" in template_list
+    assert "companies_with_high_risk" in template_list
     assert "tender_to_project" in template_list
     assert "regional_spending" in template_list

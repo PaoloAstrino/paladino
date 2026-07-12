@@ -209,6 +209,8 @@ class LLMManager:
             "Return ONLY the Cypher query string, no explanation. "
             "IMPORTANT: Only use MATCH, RETURN, WHERE, ORDER BY, LIMIT, WITH, OPTIONAL MATCH. "
             "Do NOT use any write operations. "
+            "NOTE: Do NOT add temporal filters like valid_from or valid_to; "
+            "the system adds them automatically based on the target date."
             f"Schema:\n{schema_metadata}"
         )
 

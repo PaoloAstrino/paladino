@@ -99,7 +99,7 @@ FOR (a:Asset) REQUIRE a.id_immobile IS UNIQUE;
 CREATE CONSTRAINT unique_ateco_code IF NOT EXISTS
 FOR (s:Sector) REQUIRE s.cod_ateco IS UNIQUE;
 
-// = :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// ============================================================================
 // FRAUD PATTERN CONSTRAINTS
 // = :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
@@ -108,6 +108,54 @@ FOR (f:FraudPattern) REQUIRE f.id IS UNIQUE;
 
 CREATE CONSTRAINT fraud_pattern_name_exists IF NOT EXISTS
 FOR (f:FraudPattern) REQUIRE f.pattern_name IS NOT NULL;
+
+// = :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// COMMENT CONSTRAINTS
+// = :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+// Unique comment ID
+CREATE CONSTRAINT unique_comment_id IF NOT EXISTS
+FOR (c:Comment) REQUIRE c.id IS UNIQUE;
+
+// Mandatory properties
+CREATE CONSTRAINT comment_id_exists IF NOT EXISTS
+FOR (c:Comment) REQUIRE c.id IS NOT NULL;
+
+CREATE CONSTRAINT comment_entity_id_exists IF NOT EXISTS
+FOR (c:Comment) REQUIRE c.entity_id IS NOT NULL;
+
+CREATE CONSTRAINT comment_entity_type_exists IF NOT EXISTS
+FOR (c:Comment) REQUIRE c.entity_type IS NOT NULL;
+
+CREATE CONSTRAINT comment_content_exists IF NOT EXISTS
+FOR (c:Comment) REQUIRE c.content IS NOT NULL;
+
+CREATE CONSTRAINT comment_author_exists IF NOT EXISTS
+FOR (c:Comment) REQUIRE c.author IS NOT NULL;
+
+CREATE CONSTRAINT comment_created_at_exists IF NOT EXISTS
+FOR (c:Comment) REQUIRE c.created_at IS NOT NULL;
+
+// = :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+// MERGEROLLBACK CONSTRAINTS (Audit & Rollback for Entity Merges)
+// = :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+// Unique rollback ID
+CREATE CONSTRAINT unique_merge_rollback_id IF NOT EXISTS
+FOR (r:MergeRollback) REQUIRE r.id IS UNIQUE;
+
+// Mandatory properties
+CREATE CONSTRAINT merge_rollback_id_exists IF NOT EXISTS
+FOR (r:MergeRollback) REQUIRE r.id IS NOT NULL;
+
+CREATE CONSTRAINT merge_rollback_created_at_exists IF NOT EXISTS
+FOR (r:MergeRollback) REQUIRE r.created_at IS NOT NULL;
+
+CREATE CONSTRAINT merge_rollback_target_id_exists IF NOT EXISTS
+FOR (r:MergeRollback) REQUIRE r.target_id IS NOT NULL;
+
+CREATE CONSTRAINT merge_rollback_source_ids_exists IF NOT EXISTS
+FOR (r:MergeRollback) REQUIRE r.source_ids IS NOT NULL;
 
 // ============================================================================
 // UNIVERSAL INGESTION CONSTRAINTS

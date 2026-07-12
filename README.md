@@ -1,285 +1,151 @@
-# 🛡️ Paladino - Italian Public Funds Knowledge Graph
+# 🛡️ Paladino — Sovereign Public Funds Intelligence Workspace
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![Type checked: mypy](https://img.shields.io/badge/type%20checked-mypy-blue.svg)](http://mypy-lang.org/)
-[![Citation](https://img.shields.io/badge/cite-CITATION.cff-orange.svg)](CITATION.cff)
+[![Local Only](https://img.shields.io/badge/Workstation-100%25_Local-brightgreen)](https://github.com/psf/black)
 
-> **Multi-source knowledge graph integrating Italy's public spending data (ANAC, OpenCUP, ISTAT, Demanio, ARERA, MIT)**
+> **"Segui i soldi."**
+> Paladino is the local-first intelligence workspace designed for compliance analysts, investigative journalists, and threat researchers. It maps multi-source Italian procurement data (ANAC, OpenCUP, PNRR) into a secure, offline knowledge graph, exposing corporate anomalies and ownership loops before they surface in the public record.
+> 
+> **100% Workstation-Native. Zero Telemetry. Absolute Data Sovereignty.**
 
----
-
-## 📋 Table of Contents
-
-- [Overview](#overview)
-- [Features](#features)
-- [Architecture](#architecture)
-- [Quick Start](#quick-start)
-- [Documentation](#documentation)
-- [Development](#development)
-- [Contributing](#contributing)
-- [Security](#security)
-- [License](#license)
-- [Citation](#citation)
+### 💡 Plain English Explanation (For non-technical readers)
+Think of Paladino as a digital detective. When public money is spent (like building a highway or funding a school project), it’s hard to make sure those funds aren't going to shell companies or offshore accounts. 
+Usually, finding these red flags requires analysts to dig through thousands of separate, messy spreadsheets. 
+**Paladino** automates this: it takes all those files, connects them like a social network (a graph), and lets you ask plain questions in a local AI chat (like: *"Are there any hidden links between the winning bidder and offshore companies?"*) to find anomalies in seconds.
 
 ---
 
-## Overview
+## 👁️ Context & Value Proposition
 
-Paladino builds a federated knowledge graph to enable sophisticated cross-source analysis of Italian public spending:
+In the compliance and threat intelligence space, data is messy, highly fragmented, and often locked behind heavy enterprise cloud barriers. Investigating public spending fraud or detecting supply chain anomalies requires cross-referencing billions of euros in tenders, corporate registries, and geographical data. 
 
-- **🏛️ Procurement** - ANAC tenders and awards
-- **📊 Funded Projects** - OpenCUP project tracking
-- **🏢 Corporate Structures** - Company relationships and ownership
-- **📈 Socio-Economic Context** - ISTAT demographics
-- **🏗️ Public Assets** - Demanio, ARERA, MIT property data
+Standard relational databases fall flat on multi-hop network inquiries, while traditional cloud solutions introduce unacceptable privacy and security risks for sensitive investigations.
 
-**Key Feature:** GraphRAG-powered agent for multi-hop reasoning queries like:
+**Paladino changes the paradigm.** 
 
-> "Which companies won ANAC tenders AND have PNRR projects in regions with demographic decline?"
+By running entirely on local hardware, Paladino allows you to dump raw, unstructured local data (CSV, PDF, TXT) into a high-performance local pipeline. It cleans entity names, builds a unified Neo4j Knowledge Graph, and exposes an offline GraphRAG agent to query complex relationships using natural language. 
 
-## Features
+---
 
-- 🔍 **Semantic Search** - Vector embeddings for natural language queries
-- 🤖 **GraphRAG Agent** - LLM-powered query generation with security controls
-- 📊 **Risk Analytics** - Automated anomaly detection for procurement patterns
-- 🔄 **Entity Resolution** - LLM-judge deduplication across sources
-- 🛡️ **Provenance Tracking** - Full audit trail for all data
-- 💻 **Local-First** - Runs on a single workstation (16-32GB RAM)
-- 🔒 **Offline-Capable** - No cloud dependencies required
+## ⚡ Core Pillars of the Workspace
 
-## Quick Start
+### 1. Ingestion Guardrails & Client-Side Sanitization
+Raw data is notoriously dirty. Paladino employs a client-side validation engine that intercepts uploads in real time:
+*   **Checksum Validation:** Automatically verifies Codice Fiscale (CF) and CIG formats before executing Neo4j write transactions, highlighting errors instantly.
+*   **Anti-Crash Memory Buffering:** Large datasets (multi-gigabyte files) are intercepted on the client side to block browser memory overflows, redirecting users to use optimized local stream ingestion directly to the database.
+*   **Dynamic Label Mapping:** Ingest custom entities and properties on the fly. Nodes are dynamically merged using Neo4j APOC merge constraints, keeping the ontology flexible and scalable.
 
-### Prerequisites
+### 2. GraphRAG Chat & Semantic Mapping
+Stop writing raw Cypher queries. Paladino integrates a local GraphRAG interface:
+*   **Natural Language to Cypher:** Translates plain Italian questions into optimized Cypher graph queries.
+*   **Multi-Hop Reasoning:** Uncovers hidden connections (e.g. sharing the same shareholder with an offshore company in a low-tax jurisdiction).
+*   **Strict Provenance Tracking:** Every AI response lists its sources and shows the exact query executed, preventing AI hallucinations.
 
-- Docker Desktop
-- Python 3.11+
-- 16GB+ RAM recommended
+### 3. Fuzzy Entity Resolution & Transactional Rollbacks
+Corporate registries often contain variations of the same company (e.g. `ACME SRL` vs `ACME S.R.L.`). 
+*   **Fuzzy Deduplication:** Scans the database using Jaro-Winkler and Levenshtein similarity algorithms to find duplicate candidate entities.
+*   **Side-by-Side Comparison:** Compares properties of duplicate nodes before executing a merge.
+*   **Immutability & Rollback:** Logs transactional `:MergeRollback` states in the graph, letting you undo any entity merges instantly without database corruption.
 
-### Setup
+### 4. Cedar-Powered Security & Audit Ledger
+Paladino implements a zero-trust local environment using Amazon's open-source **Cedar** policy language:
+*   **RBAC (Role-Based Access Control):** Restricts write/merge/rollback operations to `admin` level users while allowing `officer` users read-only graph explorations.
+*   **ABAC (Attribute-Based Access Control):** Context-aware policies that lock data down based on geographic region, clearance levels, or data classification.
+*   **Local Audit Trail:** Generates secure, append-only logs for every query and database modification, ensuring compliance with institutional investigative standards.
 
-```bash
-# 1. Clone repository
-git clone https://github.com/YOUR_USERNAME/paladino.git
-cd paladino
+---
 
-# 2. Start Neo4j
-docker-compose up -d
+## 🛠️ Installation & Setup
 
-# 3. Install dependencies
-pip install -e ".[dev]"
+### Quick Start (The One-Liner)
 
-# 4. Configure environment
-cp .env.example .env
-# Edit .env with your Neo4j credentials
-
-# 5. Initialize schema
-python scripts/init_schema.py
-
-# 6. Run tests
-pytest
-
-# 7. Launch the CLI
-paladino
+**Windows:**
+```cmd
+scripts\quickstart.bat
 ```
 
-### Usage
+**Unix (Linux/macOS):**
+```bash
+chmod +x scripts/quickstart.sh && ./scripts/quickstart.sh
+```
+
+*This script boots the Neo4j instance in Docker, initializes constraints and indexes, runs migrations, and launches the FastAPI/React stack.*
+
+---
+
+### Manual Setup
+
+1.  **Clone the workspace:**
+    ```bash
+    git clone https://github.com/YOUR_USERNAME/paladino.git
+    cd paladino
+    ```
+
+2.  **Spin up the Database:**
+    ```bash
+    docker-compose up -d
+    ```
+
+3.  **Install Local Environment:**
+    ```bash
+    pip install -e ".[dev]"
+    ```
+
+4.  **Configure Credentials:**
+    ```bash
+    cp .env.example .env
+    # Add your local Neo4j credentials, Cedar policy directories, and LLM API keys
+    ```
+
+5.  **Run Database Migrations:**
+    ```bash
+    python scripts/init_schema.py
+    ```
+
+6.  **Run the Stack:**
+    *   **FastAPI Backend:** `paladino work --port 8000`
+    *   **React Frontend:**
+        ```bash
+        cd frontend
+        npm install
+        npm run dev
+        ```
+
+---
+
+## 📈 System Architecture
+
+```mermaid
+graph TD
+    A[Raw Sources: ANAC, OpenCUP, ISTAT] -->|Polars Dataframe| B[ETL Pipeline]
+    B -->|Constraints & Indexes| C[(Neo4j Graph Database)]
+    C -->|Fuzzy Matches| D[Entity Deduplication Engine]
+    D -->|Merge Rollback Logs| C
+    E[Natural Language Input] -->|GraphRAG Agent| F[LLM Query Translator]
+    F -->|Generated Cypher| C
+    C -->|Graph Context & Nodes| G[React Workspace UI]
+    H[Cedar Security Engine] -->|ABAC/RBAC Checks| G
+```
+
+---
+
+## 🧬 Inference Configurations
+
+Configure local or remote LLM runtimes (Ollama, OpenRouter, Groq, OpenAI) using the interactive CLI:
 
 ```bash
-# Interactive investigation mode
-paladino investigate
-
-# Start the API server
-paladino work --port 8000
-
-# View graph statistics
-paladino stats
-
-# Check env prerequisites before schema/ingestion tasks
-paladino preflight --for all
-
-# Configure LLM (choose from Ollama models or set API key)
 paladino configure-llm
-
-# Run ETL pipelines
-python scripts/run_anac_etl.py
-
-# Ingest unstructured source (PDF/TXT/URL) with smart routing
-paladino ingest-unstructured --source path/to/document.pdf
-
-# Audio-first Phase 3: transcribe and ingest audio files
-paladino ingest-unstructured --source path/to/meeting_audio.mp3
-
-# Tune chunking for long documents
-paladino ingest-unstructured --source path/to/long_report.txt --max-chars 8000 --chunk-overlap 300
 ```
 
-### Universal Ingestion API
-
-```bash
-# Process unstructured source
-curl -X POST http://localhost:8000/ingest/unstructured \
-  -H "Content-Type: application/json" \
-  -d '{"source": "path/to/note.txt", "to_neo4j": false, "max_chars": 12000, "chunk_overlap": 400}'
-
-# Known structured sources are bypassed with ETL routing hints
-curl -X POST http://localhost:8000/ingest/unstructured \
-  -H "Content-Type: application/json" \
-  -d '{"source": "data/pnnr/PNRR_Soggetti.csv"}'
-
-# Web extraction fallback chain: Trafilatura -> Jina Reader -> Firecrawl (if FIRECRAWL_API_KEY set)
-```
-
-### OCR Requirements (for scanned PDFs)
-
-- Python packages are installed via project dependencies: `pytesseract`, `Pillow`.
-- System binary required: Tesseract OCR must be installed and available in PATH.
-- Windows install tip: install "Tesseract OCR" and ensure `tesseract.exe` is resolvable from terminal.
-
-### LLM Runtime Requirements (for real extraction)
-
-- Local mode: run Ollama and ensure `http://localhost:11434` is reachable.
-- API mode: set `PALADINO_LLM_API_KEY` and `PALADINO_LLM_API_BASE`.
-- Without an available LLM backend, ingestion can extract raw text but cannot complete NER/relationship extraction.
-
-## Architecture
-
-```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────┐     ┌─────────────┐
-│  Data Sources   │ ──► │  ETL Pipeline    │ ──► │  Neo4j      │ ──► │  GraphRAG   │
-│  ANAC, OpenCUP  │     │  (Polars)        │     │  Graph      │     │  Agent      │
-│  ISTAT, Demanio │     │                  │     │             │     │             │
-└─────────────────┘     └──────────────────┘     └─────────────┘     └─────────────┘
-                                                                        │
-                                                                        ▼
-                                                               ┌─────────────┐
-                                                               │  FastAPI    │
-                                                               │  REST API   │
-                                                               └─────────────┘
-```
-
-## Documentation
-
-### Project Documentation
-
-| Document | Description |
-|----------|-------------|
-| [Contributing Guide](CONTRIBUTING.md) | How to contribute to Paladino |
-| [Code of Conduct](CODE_OF_CONDUCT.md) | Community guidelines and expectations |
-| [Security Policy](SECURITY.md) | Reporting vulnerabilities |
-| [Changelog](CHANGELOG.md) | Version history and changes |
-| [License](LICENSE) | MIT License |
-
-### Technical Documentation
-
-| Document | Description |
-|----------|-------------|
-| [Performance Tuning](docs/PERFORMANCE_TUNING.md) | Optimization guide for large datasets |
-| [Data Model](docs/DATA_MODEL.md) | Complete schema reference |
-| [Provenance Spec](docs/PROVENANCE_SPEC.md) | Data lineage tracking |
-| [Universal Ingestion Runbook](docs/UNIVERSAL_INGESTION_RUNBOOK.md) | Deployment and operations checklist |
-| [Architecture Decision Records](docs/ADRs/) | Architectural decisions and rationale |
-
-## Development
-
-### Running Tests
-
-```bash
-# All tests
-pytest
-
-# With coverage
-pytest --cov=paladino
-
-# Specific test file
-pytest tests/unit/test_llm_manager.py
-```
-
-### Code Quality
-
-```bash
-# Linting
-ruff check paladino/
-
-# Type checking
-mypy paladino/
-
-# Formatting
-black paladino/
-```
-
-### Project Structure
-
-```
-paladino/
-├── schema/              # Neo4j schema definitions
-├── etl/                 # ETL pipelines per source
-├── ml/                  # Entity resolution models
-├── app/                 # GraphRAG agent & API
-├── analytics/           # Risk analytics & GDS
-├── tests/               # Test suite
-├── docs/                # Documentation
-└── scripts/             # Utility scripts
-```
-
-## Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for:
-
-- Development setup instructions
-- Coding standards and style guide
-- Testing requirements
-- Pull request process
-
-Before contributing, please read our [Code of Conduct](CODE_OF_CONDUCT.md) to help maintain a welcoming and inclusive community.
-
-### Ways to Contribute
-
-- 🐛 Report bugs
-- ✨ Request features
-- 📝 Improve documentation
-- 💻 Submit code fixes
-- 🧪 Add test cases
-
-## Security
-
-We take security seriously. Please see our [Security Policy](SECURITY.md) for:
-
-- How to report vulnerabilities
-- Security best practices
-- Supported versions
-
-**Important:** Never commit `.env` files or credentials to the repository.
-
-For security-related code changes, please review the [CODEOWNERS](.github/CODEOWNERS) file for required reviewers.
-
-## License
-
-This project is licensed under the [MIT License](LICENSE).
-
-## Citation
-
-If you use Paladino in your research, please cite it using the [CITATION.cff](CITATION.cff) file:
-
-```bibtex
-@software{paladino,
-  title = {Paladino: Italian Public Funds Knowledge Graph},
-  version = {0.1.0},
-  year = {2026},
-  license = {MIT},
-  url = {https://github.com/paladino-project/paladino}
-}
-```
-
-## Acknowledgments
-
-- Data sources: ANAC, OpenCUP, ISTAT
-- Built with: Neo4j, Polars, FastAPI, LangChain
-- Inspired by: GraphRAG research
+For 100% offline environments, we recommend running **Ollama** locally with the `meta-llama/llama-3.1-8b-instruct` model.
 
 ---
 
-<p align="center">
-  <strong>🛡️ Paladino - Justice & Data</strong>
-</p>
+## 🧪 Verification
+
+Validate the codebase by running unit, integration, and E2E suites:
+
+```bash
+pytest
+```

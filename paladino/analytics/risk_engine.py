@@ -134,7 +134,47 @@ class RiskEngine:
         logger.info("Saving risk score snapshots for temporal history...")
         self.save_all_risk_snapshots()
 
+        # 9. Generate alerts for risk thresholds and fraud patterns
+        logger.info("Generating alerts for risk thresholds and fraud patterns...")
+        self._generate_alerts()
+
         logger.success("Global risk analysis complete (heuristics + fraud patterns).")
+
+    def _generate_alerts(self) -> None:
+        """
+        Generate alerts for risk threshold crossings and fraud patterns.
+
+        Called automatically after global risk analysis completes.
+        Uses the AlertService to create alerts for:
+        - Companies with risk_score >= 0.7
+        - Fraud patterns detected during analysis
+        """
+        try:
+            from paladino.app.alert_service import AlertService
+
+            alert_service = AlertService(self.conn)
+
+            # Run risk threshold and fraud pattern checks
+            risk_result = alert_service.check_risk_thresholds()
+            fraud_result = alert_service.check_fraud_patterns()
+
+            total_created = risk_result.alerts_created + fraud_result.alerts_created
+            total_deduped = risk_result.alerts_deduplicated + fraud_result.alerts_deduplicated
+
+            if total_created > 0:
+                logger.info(
+                    f"Alert generation: {total_created} new alerts created, "
+                    f"{total_deduped} duplicates skipped"
+                )
+
+            # Log any errors
+            errors = risk_result.errors + fraud_result.errors
+            for error in errors:
+                logger.warning(f"Alert generator error: {error}")
+
+        except Exception as e:
+            # Don't fail the entire analysis if alert generation fails
+            logger.error(f"Alert generation failed (non-critical): {e}")
 
     def get_high_risk_entities(self, limit: int = 10) -> list[dict]:
         """Retrieve companies with the highest risk scores."""

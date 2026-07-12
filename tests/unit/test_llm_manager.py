@@ -65,7 +65,9 @@ def test_ollama_api_failure():
     """Test handling of Ollama API failure."""
     import requests
 
-    with patch("requests.post", side_effect=requests.RequestException("Connection refused")):
+    from paladino.errors import LLMConnectionError
+
+    with patch("requests.post", side_effect=requests.ConnectionError("Connection refused")):
         llm = LLMManager(model="llama3b")
-        with pytest.raises(requests.RequestException):
+        with pytest.raises(LLMConnectionError):
             llm.chat([{"role": "user", "content": "Test"}])

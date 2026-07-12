@@ -549,3 +549,445 @@ class TemporalAnalyzer:
                 "Run RiskEngine.save_risk_snapshot() after each analysis cycle."
             )
         return results
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # 8. Risk trend analysis
+    # ──────────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _get_risk_tier(score: float) -> str:
+        """Classify risk score into tier."""
+        if score >= 0.7:
+            return "high"
+        elif score >= 0.4:
+            return "medium"
+        else:
+            return "low"
+
+    def get_risk_trend_analysis(
+        self,
+        company_id: str,
+        snapshots: int = 8,
+    ) -> dict:
+        """
+        Calculate trend metrics for a company's risk score evolution.
+
+        Parameters
+        ----------
+        company_id :
+            The ``id`` property of the Company node.
+        snapshots :
+            Number of snapshots to analyze (default: 8).
+
+        Returns
+        -------
+        dict
+            Trend analysis with:
+            - company_id, company_name
+            - current_score, current_tier
+            - previous_score, previous_tier
+            - delta, delta_percent, direction
+            - volatility (std dev), max_score, min_score
+            - tier_crossed, significant_increase
+            - snapshots_count, period_start, period_end
+        """
+        logger.debug(f"[temporal] risk_trend_analysis: company={company_id}")
+
+        # Get history (ordered newest first)
+        history = self.get_risk_score_history(company_id, snapshots)
+
+        if not history:
+            return {
+                "company_id": company_id,
+                "company_name": None,
+                "current_score": None,
+                "current_tier": None,
+                "previous_score": None,
+                "previous_tier": None,
+                "delta": 0.0,
+                "delta_percent": None,
+                "direction": "stable",
+                "volatility": 0.0,
+                "max_score": None,
+                "min_score": None,
+                "tier_crossed": False,
+                "significant_increase": False,
+                "snapshots_count": 0,
+                "period_start": None,
+                "period_end": None,
+            }
+
+        # Get company name
+        company_name = None
+        name_result = self.conn.run_query(
+            "MATCH (c:Company {id: $company_id}) RETURN c.nome_normalizzato AS name",
+            {"company_id": company_id},
+        )
+        if name_result:
+            company_name = name_result[0].get("name")
+
+        # Reverse to chronological order for analysis
+        scores_chronological = [h["risk_score"] for h in reversed(history)]
+        scores = [h["risk_score"] for h in history]  # newest first
+
+        current_score = scores[0]
+        current_tier = self._get_risk_tier(current_score)
+
+        previous_score = scores[1] if len(scores) > 1 else None
+        previous_tier = self._get_risk_tier(previous_score) if previous_score is not None else None
+
+        # Calculate delta (current - previous, where previous is oldest in window)
+        oldest_score = scores_chronological[0]
+        delta = current_score - oldest_score
+
+        # Delta percent
+        delta_percent = None
+        if oldest_score is not None and oldest_score > 0:
+            delta_percent = round((delta / oldest_score) * 100, 2)
+
+        # Direction
+        if delta > 0.05:
+            direction = "increasing"
+        elif delta < -0.05:
+            direction = "decreasing"
+        else:
+            direction = "stable"
+
+        # Volatility (standard deviation)
+        volatility = 0.0
+        if len(scores_chronological) > 1:
+            volatility = round(statistics.stdev(scores_chronological), 4)
+
+        # Range
+        max_score = max(scores)
+        min_score = min(scores)
+
+        # Tier crossed?
+        tier_crossed = False
+        if previous_tier is not None and current_tier != previous_tier:
+            tier_crossed = True
+
+        # Significant increase (delta > 0.3)
+        significant_increase = delta > 0.3
+
+        # Period dates
+        period_end = history[0].get("change_date") if history else None
+        period_start = history[-1].get("change_date") if len(history) > 1 else None
+
+        return {
+            "company_id": company_id,
+            "company_name": company_name,
+            "current_score": current_score,
+            "current_tier": current_tier,
+            "previous_score": oldest_score,
+            "previous_tier": self._get_risk_tier(oldest_score),
+            "delta": round(delta, 4),
+            "delta_percent": delta_percent,
+            "direction": direction,
+            "volatility": volatility,
+            "max_score": max_score,
+            "min_score": min_score,
+            "tier_crossed": tier_crossed,
+            "significant_increase": significant_increase,
+            "snapshots_count": len(history),
+            "period_start": period_start,
+            "period_end": period_end,
+        }
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # 9. Risk distribution over time
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def get_risk_distribution_over_time(
+        self,
+        quarters: int = 8,
+    ) -> list[dict]:
+        """
+        Get global risk score distribution by quarter.
+
+        Aggregates Version nodes by quarter and calculates distribution
+        across risk tiers (high, medium, low).
+
+        Parameters
+        ----------
+        quarters :
+            Number of past quarters to include.
+
+        Returns
+        -------
+        list[dict]
+            Risk distribution per quarter with:
+            - period, year, quarter
+            - high_risk_count, medium_risk_count, low_risk_count
+            - total_companies, avg_risk_score, median_risk_score
+            - stddev_risk_score (if available)
+            - high_risk_percent, medium_risk_percent, low_risk_percent
+        """
+        logger.debug(f"[temporal] risk_distribution_over_time: quarters={quarters}")
+
+        results = self.conn.run_query(
+            """
+            MATCH (c:Company)-[:HAS_VERSION]->(v:Version)
+            WHERE v.risk_score IS NOT NULL
+              AND v.change_date >= datetime() - duration({months: $months})
+            WITH c.id AS company_id,
+                 v.risk_score AS risk_score,
+                 v.change_date.year AS year,
+                 ((v.change_date.month - 1) / 3 + 1) AS quarter
+            // Get latest snapshot per company per quarter
+            WITH company_id, year, quarter, risk_score
+            ORDER BY company_id, year, quarter, risk_score DESC
+            WITH company_id, year, quarter, head(collect(risk_score)) AS risk_score
+            // Aggregate by quarter
+            WITH year, quarter, collect(risk_score) AS scores
+            WITH year, quarter,
+                 size([s IN scores WHERE s >= 0.7]) AS high_count,
+                 size([s IN scores WHERE s >= 0.4 AND s < 0.7]) AS medium_count,
+                 size([s IN scores WHERE s < 0.4]) AS low_count,
+                 size(scores) AS total,
+                 avg(toFloat(scores)) AS avg_score,
+                 scores AS sorted_scores
+            WITH year, quarter,
+                 high_count, medium_count, low_count, total,
+                 avg_score,
+                 sorted_scores[toInt(size(sorted_scores)/2)] AS median_score,
+                 CASE WHEN size(sorted_scores) > 1
+                      THEN sqrt(reduce(sum = 0.0, s IN sorted_scores |
+                           sum + (s - avg_score)^2
+                      ) / (size(sorted_scores) - 1))
+                      ELSE null END AS stddev_score
+            WHERE total > 0
+            RETURN toString(year) + '-Q' + toString(quarter) AS period,
+                   year, quarter,
+                   high_count AS high_risk_count,
+                   medium_count AS medium_risk_count,
+                   low_count AS low_risk_count,
+                   total AS total_companies,
+                   round(avg_score * 1000) / 1000.0 AS avg_risk_score,
+                   round(median_score * 1000) / 1000.0 AS median_risk_score,
+                   CASE WHEN stddev_score IS NOT NULL
+                        THEN round(stddev_score * 1000) / 1000.0
+                        ELSE null END AS stddev_risk_score,
+                   round(toFloat(high_count) / total * 100, 2) AS high_risk_percent,
+                   round(toFloat(medium_count) / total * 100, 2) AS medium_risk_percent,
+                   round(toFloat(low_count) / total * 100, 2) AS low_risk_percent
+            ORDER BY year ASC, quarter ASC
+            """,
+            {"months": quarters * 3},
+        )
+
+        if not results:
+            logger.debug("[temporal] No risk distribution data found")
+            return []
+
+        return results
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # 10. Companies with risk changes
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def get_companies_with_risk_changes(
+        self,
+        limit: int = 20,
+        min_delta: float = 0.1,
+    ) -> dict:
+        """
+        Find companies with the biggest risk score changes between snapshots.
+
+        Compares the two most recent snapshots for each company to identify
+        significant increases and decreases.
+
+        Parameters
+        ----------
+        limit :
+            Maximum companies to return for each category.
+        min_delta :
+            Minimum absolute delta to include (default: 0.1).
+
+        Returns
+        -------
+        dict
+            Contains:
+            - increases: Companies with biggest risk increases
+            - decreases: Companies with biggest risk decreases
+            - critical_alerts: Companies with delta > 0.3
+            - tier_crossings: Companies that crossed tier boundaries
+        """
+        logger.debug(f"[temporal] risk_changes: limit={limit} min_delta={min_delta}")
+
+        # Get latest two snapshots per company
+        results = self.conn.run_query(
+            """
+            MATCH (c:Company)-[:HAS_VERSION]->(v:Version)
+            WHERE v.risk_score IS NOT NULL
+            WITH c, v
+            ORDER BY v.change_date DESC
+            WITH c, collect(v) AS versions
+            WHERE size(versions) >= 2
+            WITH c,
+                 versions[0].risk_score AS new_score,
+                 versions[1].risk_score AS old_score,
+                 versions[0].change_date AS new_date,
+                 versions[1].change_date AS old_date
+            WHERE abs(new_score - old_score) >= $min_delta
+            RETURN c.id AS company_id,
+                   c.nome_normalizzato AS company_name,
+                   c.regione AS region,
+                   c.ateco AS ateco,
+                   old_score,
+                   new_score,
+                   (new_score - old_score) AS delta,
+                   CASE WHEN old_score >= 0.7 THEN 'high'
+                        WHEN old_score >= 0.4 THEN 'medium'
+                        ELSE 'low' END AS old_tier,
+                   CASE WHEN new_score >= 0.7 THEN 'high'
+                        WHEN new_score >= 0.4 THEN 'medium'
+                        ELSE 'low' END AS new_tier
+            ORDER BY delta DESC
+            """,
+            {"min_delta": min_delta},
+        )
+
+        if not results:
+            logger.debug("[temporal] No significant risk changes found")
+            return {
+                "increases": [],
+                "decreases": [],
+                "critical_alerts": [],
+                "tier_crossings": [],
+            }
+
+        increases = []
+        decreases = []
+        critical_alerts = []
+        tier_crossings = []
+
+        for row in results:
+            item = {
+                "company_id": row["company_id"],
+                "company_name": row["company_name"],
+                "region": row.get("region"),
+                "ateco": row.get("ateco"),
+                "old_score": row["old_score"],
+                "new_score": row["new_score"],
+                "delta": round(row["delta"], 4),
+                "old_tier": row["old_tier"],
+                "new_tier": row["new_tier"],
+                "tier_crossed": row["old_tier"] != row["new_tier"],
+                "change_type": "increase" if row["delta"] > 0 else "decrease",
+                "severity": "critical" if abs(row["delta"]) > 0.3 else "moderate",
+            }
+
+            if row["delta"] > 0:
+                increases.append(item)
+                if row["delta"] > 0.3:
+                    critical_alerts.append(item)
+            else:
+                decreases.append(item)
+
+            if item["tier_crossed"]:
+                tier_crossings.append(item)
+
+        # Sort decreases by delta ascending (most negative first)
+        decreases.sort(key=lambda x: x["delta"])
+        # Sort increases by delta descending (most positive first)
+        increases.sort(key=lambda x: x["delta"], reverse=True)
+
+        return {
+            "increases": increases[:limit],
+            "decreases": decreases[:limit],
+            "critical_alerts": critical_alerts[:limit],
+            "tier_crossings": tier_crossings[:limit],
+        }
+
+    def get_diff(self, entity_id: str, date_a: str, date_b: str) -> dict:
+        """
+        Compare the properties and relationships of an entity between two dates.
+        Returns a structured delta including structural changes.
+        """
+        from paladino.app.temporal_rewriter import apply_temporal_filter
+
+        logger.info(f"Computing structural diff for {entity_id} between {date_a} and {date_b}")
+        
+        # 1. Get Node Properties for both dates
+        prop_query = "MATCH (n {id: $id}) RETURN properties(n) as props"
+        query_a = apply_temporal_filter(prop_query, date_a)
+        query_b = apply_temporal_filter(prop_query, date_b)
+
+        res_a = self.conn.run_query(query_a, {"id": entity_id, "as_of": date_a})
+        res_b = self.conn.run_query(query_b, {"id": entity_id, "as_of": date_b})
+
+        props_a = res_a[0]["props"] if res_a else {}
+        props_b = res_b[0]["props"] if res_b else {}
+
+        # 2. Get Structural State (Relationships) for both dates
+        rel_query = """
+        MATCH (n {id: $id})-[r]-(m)
+        RETURN type(r) as type, id(m) as target_id, properties(r) as props
+        """
+        rel_query_a = apply_temporal_filter(rel_query, date_a)
+        rel_query_b = apply_temporal_filter(rel_query, date_b)
+
+        rels_a_raw = self.conn.run_query(rel_query_a, {"id": entity_id, "as_of": date_a})
+        rels_b_raw = self.conn.run_query(rel_query_b, {"id": entity_id, "as_of": date_b})
+
+        # Convert to membership signatures: {(type, target_id): props}
+        def _get_sig_map(raw_rels):
+            return {(r['type'], r['target_id']): r['props'] for r in raw_rels}
+
+        sig_map_a = _get_sig_map(rels_a_raw)
+        sig_map_b = _get_sig_map(rels_b_raw)
+
+        # ── comparison logic (Properties) ─────────────────────────────────────
+        added_props = {}
+        removed_props = {}
+        changed_props = {}
+        internal_keys = {"valid_from", "valid_to", "updated_at", "lastUpdated", "retrievalDate"}
+
+        all_prop_keys = set(props_a.keys()) | set(props_b.keys())
+        for key in all_prop_keys:
+            if key in internal_keys: continue
+            val_a, val_b = props_a.get(key), props_b.get(key)
+            if key not in props_a: added_props[key] = val_b
+            elif key not in props_b: removed_props[key] = val_a
+            elif val_a != val_b: changed_props[key] = {"old": val_a, "new": val_b}
+
+        # ── comparison logic (Relationships) ──────────────────────────────────
+        added_links = []
+        removed_links = []
+        changed_links = []
+
+        all_sigs = set(sig_map_a.keys()) | set(sig_map_b.keys())
+        for sig in all_sigs:
+            type_name, target_id = sig
+            p_a, p_b = sig_map_a.get(sig), sig_map_b.get(sig)
+
+            if sig not in sig_map_a:
+                added_links.append({"type": type_name, "target_id": target_id, "props": p_b})
+            elif sig not in sig_map_b:
+                removed_links.append({"type": type_name, "target_id": target_id, "props": p_a})
+            elif p_a != p_b:
+                # Compare relationship properties
+                diff_p = {}
+                all_p_keys = set(p_a.keys()) | set(p_b.keys())
+                for pk in all_p_keys:
+                    if pk in internal_keys: continue
+                    va, vb = p_a.get(pk), p_b.get(pk)
+                    if va != vb: diff_p[pk] = {"old": va, "new": vb}
+                if diff_p:
+                    changed_links.append({"type": type_name, "target_id": target_id, "changes": diff_p})
+
+        return {
+            "entity_id": entity_id,
+            "date_a": date_a,
+            "date_b": date_b,
+            "diff": {
+                "added": added_props,
+                "removed": removed_props,
+                "changed": changed_props,
+                "added_links": added_links,
+                "removed_links": removed_links,
+                "changed_links": changed_links
+            },
+            "has_changes": bool(added_props or removed_props or changed_props or added_links or removed_links or changed_links)
+        }

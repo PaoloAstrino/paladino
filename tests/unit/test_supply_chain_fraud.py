@@ -366,7 +366,7 @@ class TestRunAllDetectorsExtended:
                 object.__setattr__(lib, attr, _NopDetector(attr))
 
         lib.run_all_detectors()
-        assert len(called) == 13, f"Expected 13 detectors, got {len(called)}: {called}"
+        assert len(called) == 14, f"Expected 14 detectors, got {len(called)}: {called}"
 
     def test_new_detectors_present_in_registry(self):
         lib, _ = _make_lib()

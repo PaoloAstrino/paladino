@@ -1,0 +1,28 @@
+         7359 function calls in 9.620 seconds
+
+   Ordered by: internal time
+   List reduced from 198 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    9.592    9.592    9.592    9.592 {built-in method _winapi.WaitForSingleObject}
+        1    0.025    0.025    0.025    0.025 {built-in method _winapi.CreateProcess}
+      568    0.000    0.000    0.001    0.000 <frozen os>:674(__getitem__)
+      568    0.000    0.000    0.000    0.000 <frozen os>:748(encodekey)
+       15    0.000    0.000    0.001    0.000 {method 'update' of 'dict' objects}
+        2    0.000    0.000    0.000    0.000 {built-in method nt.stat}
+      568    0.000    0.000    0.000    0.000 <frozen os>:742(check_str)
+     1192    0.000    0.000    0.000    0.000 {built-in method builtins.isinstance}
+       72    0.000    0.000    0.000    0.000 C:\Users\paolo\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\dotenv\parser.py:90(read_regex)
+      576    0.000    0.000    0.000    0.000 <frozen os>:697(__iter__)
+      504    0.000    0.000    0.000    0.000 <frozen _collections_abc>:835(__iter__)
+        1    0.000    0.000    0.002    0.002 C:\Users\paolo\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\pydantic_settings\main.py:232(_settings_build_values)
+        1    0.000    0.000    0.000    0.000 {built-in method io.open}
+       79    0.000    0.000    0.000    0.000 C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\Lib\re\__init__.py:272(_compile)
+        1    0.000    0.000    9.617    9.617 C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\Lib\subprocess.py:506(run)
+       72    0.000    0.000    0.000    0.000 C:\Users\paolo\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\dotenv\parser.py:53(advance)
+       38    0.000    0.000    0.000    0.000 C:\Users\paolo\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\pydantic_settings\sources.py:438(_extract_field_info)
+      568    0.000    0.000    0.000    0.000 {method 'upper' of 'str' objects}
+        2    0.000    0.000    0.000    0.000 C:\Users\paolo\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\pydantic_settings\sources.py:2266(<dictcomp>)
+       26    0.000    0.000    0.000    0.000 C:\Users\paolo\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\pydantic_settings\sources.py:2294(_annotation_is_complex)
+
+

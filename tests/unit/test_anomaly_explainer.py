@@ -82,6 +82,7 @@ def _make_conn(overrides: dict | None = None) -> MagicMock:
         "FLAGGED_BY": [_FRAUD_PATTERN_ROW],
         "HAS_SHELL_SCORE": [],  # no cached shell score
         "HAS_VERSION": _HISTORY_ROWS,
+        "v.risk_score": _HISTORY_ROWS,  # Alternative match for history query
     }
     if overrides:
         defaults.update(overrides)

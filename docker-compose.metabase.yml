@@ -1,0 +1,76 @@
+# Metabase Docker Compose for Paladino
+# 
+# Metabase is an open-source BI tool for creating dashboards
+# from your Neo4j/Paladino data.
+#
+# Usage:
+#   docker-compose -f docker-compose.metabase.yml up -d
+#   # Access at http://localhost:3001
+#
+# Setup:
+#   1. Open http://localhost:3001
+#   2. Create admin account
+#   3. Add Neo4j database connection:
+#      - Host: host.docker.internal (or your Neo4j host)
+#      - Port: 7687
+#      - Username: neo4j
+#      - Password: (your password)
+#   4. Create SQL queries using Cypher via neo4j JDBC driver
+#
+# Note: Metabase doesn't natively support Neo4j. You have two options:
+#   A. Use PostgreSQL mirror of your data (recommended)
+#   B. Use a Neo4j-to-SQL bridge service
+
+version: '3.8'
+
+services:
+  metabase:
+    image: metabase/metabase:latest
+    container_name: paladino-metabase
+    ports:
+      - "3001:3000"
+    environment:
+      MB_DB_TYPE: h2
+      MB_DB_DBNAME: metabase
+      MB_DB_PORT: 9090
+      MB_JAVA_TIMEZONE: UTC
+      MAX_SESSION_AGE: 20160
+    volumes:
+      - metabase-data:/metabase-data
+    networks:
+      - paladino-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 5m
+      timeout: 10s
+      retries: 3
+
+  # Optional: PostgreSQL mirror for Metabase queries
+  # This creates a read-only SQL mirror of your Neo4j data
+  postgres-mirror:
+    image: postgres:15-alpine
+    container_name: paladino-postgres-mirror
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: paladino_mirror
+      POSTGRES_USER: metabase
+      POSTGRES_PASSWORD: metabase_password_CHANGE_ME
+    volumes:
+      - postgres-mirror-data:/var/lib/postgresql/data
+    networks:
+      - paladino-net
+    restart: unless-stopped
+    profiles:
+      - with-postgres-mirror
+
+volumes:
+  metabase-data:
+    driver: local
+  postgres-mirror-data:
+    driver: local
+
+networks:
+  paladino-net:
+    driver: bridge

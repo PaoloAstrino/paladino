@@ -511,11 +511,11 @@ class AnomalyExplainer:
 
         # history[0] is the most recent snapshot *before* now
         previous_score = float(history[0].get("risk_score") or 0.0)
-        delta = current_score - previous_score
+        delta = round(current_score - previous_score, 4)
 
-        if delta > 0.05:
+        if delta >= 0.05:
             return "WORSENING"
-        if delta < -0.05:
+        if delta <= -0.05:
             return "IMPROVING"
         return "STABLE"
 

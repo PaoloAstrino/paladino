@@ -3,8 +3,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
+from paladino.etl.connection_resolver import ConnectionResolver
 from paladino.etl.extractors import AudioExtractor, PDFExtractor, TextExtractor, WebExtractor
-from paladino.etl.unstructured_models import ExtractedDocument
+from paladino.etl.unstructured_models import ConnectionReport, ExtractedDocument, NERResult
 
 
 @dataclass
@@ -46,6 +47,22 @@ class UniversalIngestor:
         self._pdf_extractor = PDFExtractor()
         self._text_extractor = TextExtractor()
         self._web_extractor = WebExtractor()
+        # Lazy-init for resolver (needs db + llm)
+        self._resolver: ConnectionResolver | None = None
+
+    def _get_resolver(self, llm_manager=None) -> ConnectionResolver:
+        """Lazily create the connection resolver."""
+        if self._resolver is None:
+            from paladino.db import Neo4jConnection
+            from paladino.config import settings
+
+            db = Neo4jConnection(
+                settings.neo4j_uri,
+                settings.neo4j_user,
+                settings.neo4j_password,
+            )
+            self._resolver = ConnectionResolver(db=db, llm_manager=llm_manager)
+        return self._resolver
 
     def route(self, source: str) -> RoutingDecision:
         if self._is_url(source):
@@ -211,3 +228,53 @@ class UniversalIngestor:
         raw = path.read_text(encoding="utf-8", errors="ignore")
         sample = raw[:8000]
         return any(f'"{key}"' in sample for key in expected_keys)
+
+    # ──────────────────────────────────────────────────────────────
+    # Connection-aware ingestion
+    # ──────────────────────────────────────────────────────────────
+
+    def ingest_with_connections(
+        self,
+        source: str,
+        ner_pipeline=None,
+        llm_manager=None,
+    ) -> ConnectionReport:
+        """
+        Ingest an unstructured source, extract entities/relationships, and resolve
+        them against the existing Neo4j graph.
+
+        Args:
+            source: File path, URL, or known dataset path
+            ner_pipeline: UnstructuredNERPipeline instance (created if None)
+            llm_manager: LLMManager instance for NER + LLM judge (created if None)
+
+        Returns:
+            ConnectionReport with match/create counts and discovered connections
+        """
+        # Step 1: Route and extract
+        decision = self.route(source)
+        if decision.route == "structured" and decision.handler != "custom_csv_import":
+            raise ValueError(
+                f"Source '{source}' is a known structured dataset. "
+                f"Use dedicated ETL scripts instead. Hint: {decision.handler}"
+            )
+        if decision.handler == "custom_csv_import":
+            raise ValueError("Use import_csv() for CSV sources, not ingest_with_connections().")
+
+        doc = self.ingest(source)
+
+        # Step 2: Run NER pipeline if not provided
+        if ner_pipeline is None:
+            from paladino.etl.ner_pipeline import UnstructuredNERPipeline
+            from paladino.llm_manager import LLMManager
+
+            llm = llm_manager or LLMManager()
+            ner_pipeline = UnstructuredNERPipeline(llm_manager=llm)
+
+        ner_result = ner_pipeline.extract(doc)
+
+        # Step 3: Resolve connections
+        resolver = self._get_resolver(llm_manager=ner_pipeline.llm)
+        report = resolver.resolve(ner_result, source=source)
+
+        return report

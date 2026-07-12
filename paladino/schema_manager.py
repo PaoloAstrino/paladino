@@ -31,6 +31,15 @@ class SchemaManager:
         # New Quick Win: Full-Text Search
         self.create_fulltext_index()
 
+        # Tier 3: Temporal Tracking
+        self.create_temporal_indices()
+        
+        # Tier 3: Confidence Propagation
+        self.create_confidence_indices()
+
+        # Tier 4: Composite Temporal Performance
+        self.create_composite_temporal_indices()
+
         # Track version
         self._set_schema_version(1)
 
@@ -175,6 +184,48 @@ class SchemaManager:
         with self.driver.session() as session:
             session.run(query)
         logger.success("Full-text index 'search_topics' created.")
+
+    def create_temporal_indices(self):
+        """Create indices for temporal validity fields."""
+        logger.info("Creating temporal indices...")
+        queries = [
+            "CREATE INDEX idx_all_valid_from IF NOT EXISTS FOR (n:Company) ON (n.valid_from)",
+            "CREATE INDEX idx_all_valid_to IF NOT EXISTS FOR (n:Company) ON (n.valid_to)",
+            "CREATE INDEX idx_tender_valid_from IF NOT EXISTS FOR (n:Tender) ON (n.valid_from)",
+            "CREATE INDEX idx_tender_valid_to IF NOT EXISTS FOR (n:Tender) ON (n.valid_to)",
+            "CREATE INDEX idx_project_valid_from IF NOT EXISTS FOR (n:Project) ON (n.valid_from)",
+            "CREATE INDEX idx_project_valid_to IF NOT EXISTS FOR (n:Project) ON (n.valid_to)",
+        ]
+        with self.driver.session() as session:
+            for query in queries:
+                session.run(query)
+        logger.success("Temporal indices created.")
+
+    def create_confidence_indices(self):
+        """Create indices for propagated confidence scores."""
+        logger.info("Creating confidence indices...")
+        queries = [
+            "CREATE INDEX idx_all_derived_confidence IF NOT EXISTS FOR (n:Company) ON (n.derived_confidence)",
+            "CREATE INDEX idx_tender_derived_confidence IF NOT EXISTS FOR (n:Tender) ON (n.derived_confidence)",
+            "CREATE INDEX idx_project_derived_confidence IF NOT EXISTS FOR (n:Project) ON (n.derived_confidence)",
+        ]
+        with self.driver.session() as session:
+            for query in queries:
+                session.run(query)
+        logger.success("Confidence indices created.")
+
+    def create_composite_temporal_indices(self):
+        """Create composite indices for (valid_from, id) for optimal point-in-time lookup."""
+        logger.info("Creating composite temporal indexes...")
+        queries = [
+            "CREATE INDEX idx_company_composite_temporal IF NOT EXISTS FOR (n:Company) ON (n.valid_from, n.id)",
+            "CREATE INDEX idx_tender_composite_temporal IF NOT EXISTS FOR (n:Tender) ON (n.valid_from, n.id)",
+            "CREATE INDEX idx_project_composite_temporal IF NOT EXISTS FOR (n:Project) ON (n.valid_from, n.id)",
+        ]
+        with self.driver.session() as session:
+            for query in queries:
+                session.run(query)
+        logger.success("Composite temporal indices created.")
 
     def get_schema_metadata(self) -> str:
         """Get a text description of the schema for LLM context."""
